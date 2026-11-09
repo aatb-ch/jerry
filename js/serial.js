@@ -50,8 +50,10 @@ export class Robot {
     finally { try { this.reader.releaseLock(); } catch {} }
   }
 
+  enabled = true; // global gate: when false only read-only queries go out
   send(cmd) {
     if (!this.port) throw new Error('not connected');
+    if (!this.enabled && !/^(M9|M12|M114)$/.test(cmd)) throw new Error('sending to robot is off');
     this.onLog('> ' + cmd);
     return this.writer.write(new TextEncoder().encode(cmd + '\r'));
   }

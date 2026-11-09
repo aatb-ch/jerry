@@ -37,6 +37,7 @@
   input[type=number] { width: 100%; }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); flex: 0 0 auto; }
   .dot.on { background: var(--ok); }
+  .dot.on.gated { background: var(--run); }
 
   .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
   .tree ul { padding-left: 14px; border-left: 1px dashed var(--line); margin-left: 6px; }
@@ -77,7 +78,9 @@
 
 <div class="panel" id="left">
   <section>
-    <h3><span class="dot" id="dot"></span> Connection</h3>
+    <h3><span class="dot" id="dot"></span> Connection <span class="sp"></span>
+      <label class="chk" title="Global gate: when off, nothing is sent to the arm (programs and jogging run on the virtual robot only)"><input type="checkbox" id="live" checked> send to robot</label>
+    </h3>
     <div class="row">
       <select id="port"></select>
       <button id="btnAddPort" style="flex:0 0 auto" title="Pick a USB serial port (browser dialog)">+ Port</button>
@@ -134,9 +137,7 @@
 
 <div class="panel" id="right">
   <section>
-    <h3>Jog <span class="sp"></span>
-      <label class="chk"><input type="checkbox" id="live" checked> send to robot</label>
-    </h3>
+    <h3>Jog</h3>
     <div class="row seg">
       <button data-frame="joint">Joints</button><button data-frame="robot">Robot XYZ</button><button data-frame="base">Base XYZ</button>
     </div>

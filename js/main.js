@@ -12,6 +12,7 @@ const STOP = new Error('stopped');
 
 // ---------------- state ----------------
 const robot = new Robot();
+const live = () => robot.open && robot.enabled; // global gate: nothing is sent to the arm unless this is true
 let prog, sel = null, cur = [0, 0, 0], real = null, running = false, abort = false, runId = null;
 
 const newProgram = () => ({
@@ -231,7 +232,7 @@ async function jog(i, d) {
 }
 let jogChain = Promise.resolve();
 function sendJog(kind) {
-  if (!robot.open || !$('live').checked) return;
+  if (!live()) return;
   const j = [...cur], f = +$('jogSpeed').value;
   lastCmdT = performance.now();
   jogChain = jogChain.then(() => kind === 'j' ? robot.movej(j, f) : robot.movel(fk(j), f)).catch(e => log(e.message, true));
@@ -277,7 +278,7 @@ setInterval(async () => {
   pollBusy = true;
   try {
     const j = await syncFromRobot();
-    if ($('live').checked && !gizmo.dragging && performance.now() - lastCmdT > HOLD_MS && !running) setCur(j);
+    if (live() && !gizmo.dragging && performance.now() - lastCmdT > HOLD_MS && !running) setCur(j);
     else renderReadout();
   } catch {}
   pollBusy = false;
@@ -316,24 +317,24 @@ async function waitAbortable(ms) {
 async function exec(n) {
   if (abort) throw STOP;
   if (n.id) { runId = n.id; renderTree(); }
-  const live = robot.open;
+  const on = live();
   switch (n.type) {
     case 'program': for (const c of n.children) await exec(c); break;
     case 'loop': for (let i = 0; i < n.count; i++) for (const c of n.children) await exec(c); break;
     case 'wait': await waitAbortable(n.ms); break;
-    case 'poweron': if (live) { await robot.powerOn(); await sleep(300); } break;
-    case 'release': if (live) { await robot.release(); await sleep(300); } break;
+    case 'poweron': if (on) { await robot.powerOn(); await sleep(300); } break;
+    case 'release': if (on) { await robot.release(); await sleep(300); } break;
     case 'home':
-      if (live) { log('homing…'); await robot.home(); setCur(await syncFromRobot().catch(() => [0, 0, 0])); }
+      if (on) { log('homing…'); await robot.home(); setCur(await syncFromRobot().catch(() => [0, 0, 0])); }
       else await animJ([0, 0, 0], 60);
       break;
     case 'movej': case 'movel': {
       const w = wpById(n.wp);
       if (!w) throw new Error('move has no waypoint');
       if (w.bad) throw new Error(`waypoint ${w.name} unreachable`);
-      if (live) n.type === 'movej' ? await robot.movej(w.joints, n.speed) : await robot.movel(w.robotPos, n.speed);
+      if (on) n.type === 'movej' ? await robot.movej(w.joints, n.speed) : await robot.movel(w.robotPos, n.speed);
       n.type === 'movej' ? await animJ(w.joints, n.speed) : await animL(w.robotPos, n.speed);
-      if (live) { await robot.waitIdle(() => abort); setCur(await syncFromRobot().catch(() => cur)); }
+      if (on) { await robot.waitIdle(() => abort); setCur(await syncFromRobot().catch(() => cur)); }
       break;
     }
   }
@@ -451,9 +452,10 @@ async function toggleConnection() {
 
 function renderButtons() {
   $('dot').classList.toggle('on', robot.open);
+  $('dot').classList.toggle('gated', !robot.enabled);
   $('btnConn').textContent = robot.open ? 'Close' : 'Open';
   for (const b of ['btnRun', 'btnStep', 'btnHome', 'btnSave', 'btnNew']) $(b).disabled = running;
-  $('btnPower').disabled = $('btnRelease').disabled = running || !robot.open;
+  $('btnPower').disabled = $('btnRelease').disabled = running || !live();
   $('btnStop').disabled = !running;
   document.querySelectorAll('#tools button').forEach(b => { b.disabled = running; });
 }
@@ -484,6 +486,7 @@ document.querySelectorAll('[data-op]').forEach(b => b.addEventListener('click', 
 $('progName').addEventListener('change', e => { prog.name = e.target.value; });
 
 $('btnConn').onclick = guard(toggleConnection);
+$('live').onchange = e => { robot.enabled = e.target.checked; log(robot.enabled ? 'sending to robot ON' : 'sending to robot OFF – sim only'); renderButtons(); };
 $('btnAddPort').onclick = guard(addPort);
 $('btnPower').onclick = () => run({ type: 'poweron' });
 $('btnHome').onclick = () => run({ type: 'home' });
