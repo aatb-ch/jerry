@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P340 Studio</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
+<style>
+  :root { --bg: rgba(24,28,33,.86); --fg: #e6e9ed; --mut: #8f99a4; --line: #39414a; --acc: #4da3ff; --sel: #2c4a6b; --run: #ffb02e; --bad: #ff5a5a; --ok: #3ccf7a; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1d2228; color: var(--fg); font: 13px/1.4 system-ui, -apple-system, sans-serif; }
+  canvas { display: block; }
+  .labels { position: fixed; inset: 0; pointer-events: none; }
+  .lbl { font-size: 11px; padding: 1px 5px; border-radius: 4px; background: rgba(0,0,0,.55); color: #fff; }
+  .lbl.base { color: #ffd23f; }
+
+  .panel { position: fixed; top: 12px; bottom: 12px; width: 330px; background: var(--bg); backdrop-filter: blur(8px); border: 1px solid var(--line); border-radius: 10px; display: flex; flex-direction: column; overflow: hidden; }
+  #left { left: 12px; } #right { right: 12px; width: 300px; }
+  section { padding: 10px 12px; border-bottom: 1px solid var(--line); }
+  section.grow { flex: 1; overflow: auto; min-height: 120px; }
+  h3 { margin: 0 0 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--mut); display: flex; align-items: center; gap: 6px; }
+  h3 .sp { flex: 1; }
+  .row { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .row > * { flex: 1; min-width: 0; }
+  button, select, input { font: inherit; color: var(--fg); background: #2a3138; border: 1px solid var(--line); border-radius: 6px; padding: 5px 7px; }
+  button { cursor: pointer; white-space: nowrap; }
+  button:hover:not(:disabled) { border-color: var(--acc); }
+  button:disabled { opacity: .4; cursor: default; }
+  button.pri { background: #1f5f9e; border-color: #2b77c2; }
+  button.stop { background: #8a2b2b; border-color: #b33a3a; }
+  button.sm { padding: 2px 7px; flex: 0 0 auto; }
+  input[type=number] { width: 100%; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--bad); flex: 0 0 auto; }
+  .dot.on { background: var(--ok); }
+
+  .tree, .tree ul { list-style: none; margin: 0; padding: 0; }
+  .tree ul { padding-left: 14px; border-left: 1px dashed var(--line); margin-left: 6px; }
+  .item { padding: 3px 6px; border-radius: 5px; cursor: pointer; display: flex; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item:hover { background: #2a3138; }
+  .item.sel { background: var(--sel); }
+  .item.run { outline: 2px solid var(--run); }
+  .item.bad { color: var(--bad); }
+  .item .ic { width: 16px; text-align: center; color: var(--mut); flex: 0 0 auto; }
+  .group { margin: 8px 0 4px; font-size: 11px; color: var(--mut); text-transform: uppercase; letter-spacing: .06em; }
+  .tools { display: flex; flex-wrap: wrap; gap: 4px; }
+  .tools button { padding: 3px 7px; font-size: 12px; }
+
+  #log { font: 11px/1.35 ui-monospace, Menlo, monospace; color: var(--mut); height: 110px; overflow: auto; white-space: pre-wrap; padding: 6px 12px; flex: 0 0 auto; }
+  #log .err { color: var(--bad); }
+
+  .jog { display: grid; grid-template-columns: 26px 34px 1fr 34px; gap: 5px; align-items: center; margin-bottom: 5px; }
+  .jog b { color: var(--mut); font-weight: 600; }
+  .jog .v { text-align: center; font-variant-numeric: tabular-nums; }
+  .read { display: grid; grid-template-columns: 52px repeat(3, 1fr); gap: 2px 6px; font-variant-numeric: tabular-nums; font-size: 12px; }
+  .read span:nth-child(4n+1) { color: var(--mut); }
+  .read span:not(:nth-child(4n+1)) { text-align: right; }
+  .field { display: grid; grid-template-columns: 70px 1fr; gap: 6px; align-items: center; margin-bottom: 6px; }
+  .field label { color: var(--mut); }
+  .trip { display: grid; grid-template-columns: 70px 1fr 1fr 1fr; gap: 4px; align-items: center; margin-bottom: 6px; }
+  .trip label { color: var(--mut); }
+  .note { color: var(--mut); font-size: 12px; }
+  .warn { color: var(--bad); font-size: 12px; margin-bottom: 6px; }
+  .seg { gap: 0; }
+  .seg button { border-radius: 0; margin-left: -1px; }
+  .seg button:first-child { border-radius: 6px 0 0 6px; }
+  .seg button:last-child { border-radius: 0 6px 6px 0; }
+  .seg button.on { background: #1f5f9e; border-color: #2b77c2; position: relative; }
+  .chk { display: flex; gap: 6px; align-items: center; color: var(--mut); flex: 0 0 auto; }
+</style>
+</head>
+<body>
+
+<div class="panel" id="left">
+  <section>
+    <h3><span class="dot" id="dot"></span> Connection</h3>
+    <div class="row">
+      <select id="port"></select>
+      <button id="btnAddPort" style="flex:0 0 auto" title="Pick a USB serial port (browser dialog)">+ Port</button>
+      <select id="baud" style="flex:0 0 90px">
+        <option>9600</option><option>57600</option><option selected>115200</option><option>250000</option>
+      </select>
+      <button id="btnConn" style="flex:0 0 64px">Open</button>
+    </div>
+    <div class="row">
+      <button id="btnPower">Power on</button>
+      <button id="btnHome">Home</button>
+      <button id="btnRelease">Release</button>
+    </div>
+  </section>
+  <section>
+    <h3>Program</h3>
+    <div class="row"><input id="progName" placeholder="Program name"></div>
+    <div class="row">
+      <button class="pri" id="btnRun">▶ Run</button>
+      <button id="btnStep">▶ Line</button>
+      <button class="stop" id="btnStop">■ Stop</button>
+    </div>
+    <div class="row">
+      <button id="btnSave">Save</button>
+      <button id="btnNew">New</button>
+    </div>
+  </section>
+  <section class="grow">
+    <div id="tree"></div>
+  </section>
+  <section>
+    <div class="tools" id="tools">
+      <button data-add="movej">+ MoveJ</button>
+      <button data-add="movel">+ MoveL</button>
+      <button data-add="wait">+ Wait</button>
+      <button data-add="loop">+ Loop</button>
+      <button data-add="poweron">+ Power on</button>
+      <button data-add="home">+ Home</button>
+      <button data-add="release">+ Release</button>
+      <button data-add="wp">+ Waypoint</button>
+      <button data-add="wpcap">+ Waypoint (TCP)</button>
+    </div>
+    <div class="tools" style="margin-top:6px">
+      <button data-op="up" title="Move up">↑</button>
+      <button data-op="down" title="Move down">↓</button>
+      <button data-op="in" title="Into loop above">→ in loop</button>
+      <button data-op="out" title="Out of loop">← out</button>
+      <button data-op="dup" title="Duplicate">Duplicate</button>
+      <button data-op="del" title="Delete">Delete</button>
+    </div>
+  </section>
+  <div id="log"></div>
+</div>
+
+<div class="panel" id="right">
+  <section>
+    <h3>Jog <span class="sp"></span>
+      <label class="chk"><input type="checkbox" id="live" checked> send to robot</label>
+    </h3>
+    <div class="row seg">
+      <button data-frame="joint">Joints</button><button data-frame="robot">Robot XYZ</button><button data-frame="base">Base XYZ</button>
+    </div>
+    <div class="row">
+      <span class="note" style="flex:0 0 auto">step</span>
+      <select id="jogStep"><option>0.5</option><option>1</option><option selected>5</option><option>10</option><option>25</option></select>
+      <span class="note" style="flex:0 0 auto">speed</span>
+      <input id="jogSpeed" type="number" value="50" min="1" max="200" title="Speed (0–200)">
+    </div>
+    <div id="jogRows"></div>
+    <div class="read" id="readout"></div>
+  </section>
+  <section class="grow">
+    <h3>Properties</h3>
+    <div id="props"></div>
+  </section>
+</div>
+
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,4 @@
+db/*
+!db/.htaccess
+!db/.gitkeep
+.DS_Store
