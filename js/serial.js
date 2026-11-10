@@ -15,7 +15,7 @@ export class Robot {
 
   async connect(port, baudRate) {
     await port.open({ baudRate });
-    this.port = port;
+    this.port = port; this.q = Promise.resolve(); this.waiters = []; this.buf = '';
     this.writer = port.writable.getWriter();
     this.readLoop();
     await sleep(1500); // board resets on open
@@ -24,6 +24,7 @@ export class Robot {
   async disconnect() {
     const p = this.port; if (!p) return;
     this.port = null;
+    this.cancel('port closed'); this.q = Promise.resolve(); // nothing from this session may block the next one
     try { await this.reader?.cancel(); } catch {}
     try { this.writer.releaseLock(); } catch {}
     try { await p.close(); } catch {}
@@ -31,7 +32,8 @@ export class Robot {
 
   async readLoop() {
     const dec = new TextDecoder();
-    this.reader = this.port.readable.getReader();
+    const port = this.port;
+    this.reader = port.readable.getReader();
     try {
       for (;;) {
         const { value, done } = await this.reader.read();
@@ -46,8 +48,10 @@ export class Robot {
           this.waiters = this.waiters.filter(w => !(w.re.test(line) && (w.resolve(line), true)));
         }
       }
-    } catch {}
+    } catch (e) { if (this.port === port) this.onLog('! read error: ' + e.message); }
     finally { try { this.reader.releaseLock(); } catch {} }
+    // after a non-fatal error (e.g. break/framing on a board reset) Web Serial offers a new readable: keep reading
+    if (this.port === port && port.readable) { await sleep(100); this.readLoop(); }
   }
 
   enabled = true; // global gate: when false only read-only queries go out
@@ -55,7 +59,11 @@ export class Robot {
     if (!this.port) throw new Error('not connected');
     if (!this.enabled && !/^(M9|M12|M114)$/.test(cmd)) throw new Error('sending to robot is off');
     this.onLog('> ' + cmd);
-    return this.writer.write(new TextEncoder().encode(cmd + '\r'));
+    let t;
+    return Promise.race([
+      this.writer.write(new TextEncoder().encode(cmd + '\r')),
+      new Promise((_, rej) => { t = setTimeout(() => rej(new Error('write timeout – robot not accepting data, reconnect')), 2000); }),
+    ]).finally(() => clearTimeout(t));
   }
 
   waitFor(re, timeout = 1000) {
@@ -73,7 +81,7 @@ export class Robot {
   query(cmd, re, timeout) { return this.exclusive(async () => { const p = this.waitFor(re, timeout); await this.send(cmd); return p; }); }
   write(cmd) { return this.exclusive(() => this.send(cmd)); }
   // Stop: give up on whatever we wait for, so the queue frees up
-  cancel() { const e = new Error('stopped'); this.waiters.forEach(w => w.reject(e)); this.waiters = []; }
+  cancel(msg = 'stopped') { const e = new Error(msg); this.waiters.forEach(w => w.reject(e)); this.waiters = []; }
 
   async nums(cmd, tag) {
     const line = await this.query(cmd, new RegExp(tag + '\\['));

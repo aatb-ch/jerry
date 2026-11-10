@@ -318,15 +318,17 @@ async function syncFromRobot() {
 // poll the real robot while connected; the sim follows it (e.g. moved by hand with servos released),
 // except shortly after a jog/drag command (sim leads, robot catches up), while dragging, or with "send to robot" off
 const POLL_MS = 700, HOLD_MS = 1500;
-let pollBusy = false, lastCmdT = 0;
+let pollBusy = false, lastCmdT = 0, pollFail = 0;
 setInterval(async () => {
   if (!robot.open || running || pollBusy) return;
   pollBusy = true;
   try {
     const j = await syncFromRobot();
+    if (pollFail) log('robot answering again');
+    pollFail = 0;
     if (live() && !gizmo.dragging && performance.now() - lastCmdT > HOLD_MS && !running) setCur(j);
     else renderReadout();
-  } catch {}
+  } catch (e) { if (robot.open && pollFail++ === 0) log('robot not answering position requests: ' + e.message, true); }
   pollBusy = false;
 }, POLL_MS);
 
