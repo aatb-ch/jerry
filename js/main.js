@@ -575,7 +575,7 @@ function renderButtons() {
   $('btnPower').disabled = $('btnRelease').disabled = running || !live();
   $('btnStop').disabled = !running;
   gizmo.enabled = !running; // no dragging/streaming while a program drives the arm
-  document.querySelectorAll('#tools button').forEach(b => { b.disabled = running; });
+  document.querySelectorAll('.tools button').forEach(b => { b.disabled = running; });
 }
 
 // ---------------- log ----------------

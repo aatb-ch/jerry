@@ -51,6 +51,8 @@
   .group { margin: 8px 0 4px; font-size: 11px; color: var(--mut); text-transform: uppercase; letter-spacing: .06em; }
   .tools { display: flex; flex-wrap: wrap; gap: 4px; }
   .tools button { padding: 3px 7px; font-size: 12px; }
+  .tools.add button { background: #1d3a57; border-color: #2b5680; } /* add commands / waypoints */
+  .tools.ops button { background: transparent; } /* restructure the program */
 
   #log { font: 11px/1.35 ui-monospace, Menlo, monospace; color: var(--mut); height: 110px; overflow: auto; white-space: pre-wrap; padding: 6px 12px; flex: 0 0 auto; }
   #log .err { color: var(--bad); }
@@ -123,7 +125,7 @@
     <div id="tree"></div>
   </section>
   <section>
-    <div class="tools" id="tools">
+    <div class="tools add" id="tools">
       <button data-add="movej">+ MoveJ</button>
       <button data-add="movel">+ MoveL</button>
       <button data-add="wait">+ Wait</button>
@@ -135,7 +137,7 @@
       <button data-add="wp">+ Waypoint</button>
       <button data-add="wpcap">+ Waypoint (TCP)</button>
     </div>
-    <div class="tools" style="margin-top:6px">
+    <div class="tools ops" style="margin-top:6px">
       <button data-op="up" title="Move up">↑</button>
       <button data-op="down" title="Move down">↓</button>
       <button data-op="in" title="Into loop above">→ in loop</button>
