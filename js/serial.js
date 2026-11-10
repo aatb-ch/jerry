@@ -43,6 +43,11 @@ export class Robot {
           this.buf = this.buf.slice(i + 1);
           if (!line) continue;
           this.onLog('< ' + line);
+          // board rebooted (power dip / reset): fail whatever we were waiting for instead of hanging
+          if (/Restart board|ROBOT ONLINE/i.test(line)) {
+            const e = new Error(/Restart/i.test(line) ? "robot asks to 'Restart board' – power-cycle the arm, reconnect, then Home" : 'robot board rebooted – press Home');
+            this.waiters.forEach(w => w.reject(e)); this.waiters = [];
+          }
           this.waiters = this.waiters.filter(w => !(w.re.test(line) && (w.resolve(line), true)));
         }
       }
@@ -60,7 +65,7 @@ export class Robot {
 
   waitFor(re, timeout = 1000) {
     return new Promise((resolve, reject) => {
-      const w = { re, resolve: v => { clearTimeout(t); resolve(v); } };
+      const w = { re, resolve: v => { clearTimeout(t); resolve(v); }, reject: e => { clearTimeout(t); reject(e); } };
       const t = setTimeout(() => { this.waiters = this.waiters.filter(x => x !== w); reject(new Error('timeout waiting for ' + re)); }, timeout);
       this.waiters.push(w);
     });
@@ -82,11 +87,13 @@ export class Robot {
   movej(j, speed) { j = mj(j); return this.send(`M11 X${f2(j[0])} Y${f2(j[1])} Z${f2(j[2])} F${speed | 0}`); }
   movel(p, speed) { p = m(p); return this.send(`G0 X${f2(p[0])} Y${f2(p[1])} Z${f2(p[2])} F${speed | 0}`); }
 
-  // poll M9 until "Moving end" (or timeout)
+  // poll M9 until "Moving end"; throws on timeout or board restart (caller handles abort)
   async waitIdle(isAborted, timeout = 30000) {
     const t0 = Date.now();
-    while (Date.now() - t0 < timeout && !isAborted()) {
-      try { await this.query('M9', /Moving end/i, 300); return; } catch {}
+    while (!isAborted()) {
+      try { await this.query('M9', /Moving end/i, 300); return; }
+      catch (e) { if (/restarted/.test(e.message)) throw e; }
+      if (Date.now() - t0 > timeout) throw new Error('robot did not report end of move');
       await sleep(100);
     }
   }

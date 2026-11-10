@@ -12,6 +12,10 @@ def versions(d):
 class H(SimpleHTTPRequestHandler):
     def __init__(self, *a, **k): super().__init__(*a, directory=ROOT, **k)
 
+    def end_headers(self):
+        self.send_header('Cache-Control', 'no-cache')
+        super().end_headers()
+
     def reply(self, code, body, headers={}):
         self.send_response(code); self.send_header('Content-Type', 'application/json')
         for k, v in headers.items(): self.send_header(k, str(v))

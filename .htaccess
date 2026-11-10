@@ -1,0 +1,6 @@
+# Always revalidate the app files so students get updates without a hard reload
+<IfModule mod_headers.c>
+  <FilesMatch "\.(html|js|php)$">
+    Header set Cache-Control "no-cache"
+  </FilesMatch>
+</IfModule>

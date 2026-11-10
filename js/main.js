@@ -14,7 +14,7 @@ const STOP = new Error('stopped');
 // ---------------- state ----------------
 const robot = new Robot();
 const live = () => robot.open && robot.enabled; // global gate: nothing is sent to the arm unless this is true
-let prog, sel = null, cur = [0, 0, 0], real = null, running = false, abort = false, runId = null;
+let prog, sel = null, cur = [0, 0, 0], real = null, running = false, abort = false, runId = null, runLive = false;
 
 const newProgram = () => ({
   name: 'Untitled',
@@ -360,10 +360,16 @@ async function waitAbortable(ms) {
   while (Date.now() - t0 < ms) { if (abort) throw STOP; await sleep(Math.min(50, ms - (Date.now() - t0))); }
 }
 
+// let Stop/Esc interrupt a long wait on the robot (e.g. homing)
+const abortable = p => new Promise((res, rej) => {
+  const t = setInterval(() => { if (abort) { clearInterval(t); rej(STOP); } }, 50);
+  p.then(v => { clearInterval(t); res(v); }, e => { clearInterval(t); rej(e); });
+});
+
 async function exec(n) {
   if (abort) throw STOP;
   if (n.id) { runId = n.id; renderTree(); }
-  const on = live();
+  const on = runLive; // decided once per run: connecting mid-preview never starts sending
   switch (n.type) {
     case 'program': for (const c of n.children) await exec(c); break;
     case 'loop': for (let i = 0; i < n.count; i++) for (const c of n.children) await exec(c); break;
@@ -371,7 +377,7 @@ async function exec(n) {
     case 'poweron': if (on) { await robot.powerOn(); await sleep(300); } break;
     case 'release': if (on) { await robot.release(); await sleep(300); } break;
     case 'home':
-      if (on) { log('homing…'); await robot.home(); setCur(await syncFromRobot().catch(() => [0, 0, 0])); }
+      if (on) { log('homing…'); await abortable(robot.home()); setCur(await syncFromRobot().catch(() => [0, 0, 0])); }
       else await animJ([0, 0, 0], 60);
       break;
     case 'movej': case 'movel': {
@@ -401,7 +407,7 @@ async function exec(n) {
 
 async function run(node) {
   if (running) return;
-  running = true; abort = false; renderButtons();
+  running = true; abort = false; runLive = live(); renderButtons();
   try { await exec(node); log('done'); }
   catch (e) { log(e === STOP ? 'stopped' : 'error: ' + e.message, e !== STOP); }
   running = false; runId = null; refresh();
@@ -546,6 +552,7 @@ function renderButtons() {
   for (const b of ['btnRun', 'btnStep', 'btnHome', 'btnSave', 'btnLoad', 'btnNew']) $(b).disabled = running;
   $('btnPower').disabled = $('btnRelease').disabled = running || !live();
   $('btnStop').disabled = !running;
+  gizmo.enabled = !running; // no dragging/streaming while a program drives the arm
   document.querySelectorAll('#tools button').forEach(b => { b.disabled = running; });
 }
 
