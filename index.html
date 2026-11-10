@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>P340 Studio</title>
+<title>Jerry by AATB</title>
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
@@ -71,6 +71,8 @@
   .seg button:first-child { border-radius: 6px 0 0 6px; }
   .seg button:last-child { border-radius: 0 6px 6px 0; }
   .seg button.on { background: #1f5f9e; border-color: #2b77c2; position: relative; }
+  #credit { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--mut); }
+  #credit a { color: var(--fg); text-decoration: none; } #credit a:hover { color: var(--acc); }
   .chk { display: flex; gap: 6px; align-items: center; color: var(--mut); flex: 0 0 auto; }
 </style>
 </head>
@@ -155,6 +157,8 @@
     <div id="props"></div>
   </section>
 </div>
+
+<div id="credit">Jerry by <a href="https://aatb.ch" target="_blank" rel="noopener">AATB</a></div>
 
 <script type="module" src="js/main.js"></script>
 </body>
