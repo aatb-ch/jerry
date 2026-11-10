@@ -17,6 +17,7 @@ let prog, sel = null, cur = [0, 0, 0], real = null, running = false, abort = fal
 
 const newProgram = () => ({
   name: 'Untitled',
+  author: '',
   base: { x: 200, y: 0, z: 0, rx: 0, ry: 0, rz: 0 },
   waypoints: [],
   root: { id: 'root', type: 'program', children: [] },
@@ -81,6 +82,7 @@ function renderTree() {
     `<div class="group">Program</div>${prog.root.children.length ? nodes(prog.root.children) : '<div class="note">empty – use the buttons below</div>'}` +
     `</div>`;
   $('progName').value = prog.name;
+  $('progAuthor').value = prog.author || '';
 }
 const esc = s => String(s).replace(/[&<>"]/g, c => `&#${c.charCodeAt(0)};`);
 
@@ -418,6 +420,35 @@ async function load(id, v) {
   log(`loaded ${prog.name} v${ver}` + (ver !== latest ? ` (latest is v${latest})` : ''));
 }
 
+// Load dialog: every saved program, newest first, with a version picker (latest by default)
+let saved = [];
+async function openLoad() {
+  const r = await fetch('api.php?list');
+  if (!r.ok) throw new Error('list failed: ' + r.status);
+  saved = await r.json();
+  $('loadFilter').value = '';
+  renderLoad();
+  $('loadDlg').showModal();
+  $('loadFilter').focus();
+}
+function renderLoad() {
+  const f = $('loadFilter').value.toLowerCase();
+  const rows = saved.filter(p => (p.name + ' ' + p.author).toLowerCase().includes(f));
+  $('loadList').innerHTML = rows.length ? '<table>' + rows.map(p =>
+    `<tr data-id="${p.id}"><td>${esc(p.name || 'Untitled')}</td><td class="m">${esc(p.author || '–')}</td>` +
+    `<td class="m">${new Date(p.t * 1000).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>` +
+    `<td><select>${p.versions.slice().reverse().map(v => `<option>${v}</option>`).join('')}</select></td>` +
+    `<td><button class="sm pri">Open</button></td></tr>`).join('') + '</table>' : '<div class="note">no saved programs</div>';
+}
+$('loadList').addEventListener('click', e => {
+  if (!e.target.closest('button')) return;
+  const tr = e.target.closest('tr');
+  $('loadDlg').close();
+  guard(load)(tr.dataset.id, tr.querySelector('select').value);
+});
+$('loadFilter').addEventListener('input', renderLoad);
+$('loadClose').onclick = () => $('loadDlg').close();
+
 function setProgram(p) { prog = p; sel = null; updateBase(); refresh(); }
 
 // ---------------- serial UI ----------------
@@ -454,7 +485,7 @@ function renderButtons() {
   $('dot').classList.toggle('on', robot.open);
   $('dot').classList.toggle('gated', !robot.enabled);
   $('btnConn').textContent = robot.open ? 'Close' : 'Open';
-  for (const b of ['btnRun', 'btnStep', 'btnHome', 'btnSave', 'btnNew']) $(b).disabled = running;
+  for (const b of ['btnRun', 'btnStep', 'btnHome', 'btnSave', 'btnLoad', 'btnNew']) $(b).disabled = running;
   $('btnPower').disabled = $('btnRelease').disabled = running || !live();
   $('btnStop').disabled = !running;
   document.querySelectorAll('#tools button').forEach(b => { b.disabled = running; });
@@ -484,6 +515,7 @@ document.querySelectorAll('[data-add]').forEach(b => b.addEventListener('click',
 }));
 document.querySelectorAll('[data-op]').forEach(b => b.addEventListener('click', () => { op(b.dataset.op); refresh(); }));
 $('progName').addEventListener('change', e => { prog.name = e.target.value; });
+$('progAuthor').addEventListener('change', e => { prog.author = e.target.value; });
 
 $('btnConn').onclick = guard(toggleConnection);
 $('live').onchange = e => { robot.enabled = e.target.checked; log(robot.enabled ? 'sending to robot ON' : 'sending to robot OFF – sim only'); renderButtons(); };
@@ -498,6 +530,7 @@ $('btnStep').onclick = () => {
 };
 $('btnStop').onclick = () => { abort = true; };
 $('btnSave').onclick = guard(save);
+$('btnLoad').onclick = guard(openLoad);
 $('btnNew').onclick = () => { if (confirm('Discard current program?')) { setUrl(null); setProgram(newProgram()); } };
 document.querySelectorAll('[data-frame]').forEach(b => b.addEventListener('click', () => { jogFrame = b.dataset.frame; renderJogRows(); }));
 $('jogRows').addEventListener('click', e => { const b = e.target.closest('button'); if (b) jog(+b.dataset.j, +b.dataset.d); });

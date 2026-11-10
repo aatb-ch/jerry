@@ -2,11 +2,24 @@
 // Flat-file program storage, every save is a new immutable version: db/<guid>/<version>.json
 // POST api.php[?id=<guid>]       body = program json -> {"id": "<guid>", "v": <version>}  (new guid if none given)
 // GET  api.php?id=<guid>[&v=<n>] -> program json (latest version if v omitted)
+// GET  api.php?list              -> [{id, name, author, versions, t}] newest first
 header('Content-Type: application/json');
 $db = __DIR__ . '/db';
 
 function fail($code, $msg) { http_response_code($code); exit(json_encode(['error' => $msg])); }
 function versions($dir) { $v = array_map(fn($f) => (int)basename($f, '.json'), glob("$dir/*.json") ?: []); sort($v); return $v; }
+
+if (isset($_GET['list'])) {
+  $out = [];
+  foreach (glob("$db/*", GLOB_ONLYDIR) ?: [] as $dir) {
+    $vs = versions($dir); if (!$vs) continue;
+    $f = "$dir/" . end($vs) . ".json";
+    $p = json_decode(file_get_contents($f), true) ?: [];
+    $out[] = ['id' => basename($dir), 'name' => $p['name'] ?? '', 'author' => $p['author'] ?? '', 'versions' => $vs, 't' => filemtime($f)];
+  }
+  usort($out, fn($a, $b) => $b['t'] - $a['t']);
+  exit(json_encode($out));
+}
 
 $id = $_GET['id'] ?? '';
 if ($id !== '' && !preg_match('/^[0-9a-f-]{36}$/', $id)) fail(400, 'bad id');

@@ -20,7 +20,7 @@ class H(SimpleHTTPRequestHandler):
 
     def id(self):
         u = urlparse(self.path)
-        q = parse_qs(u.query)
+        q = parse_qs(u.query, keep_blank_values=True)
         id = q.get('id', [''])[0]
         return u.path, q, id, (id == '' or re.fullmatch(r'[0-9a-f-]{36}', id))
 
@@ -28,6 +28,14 @@ class H(SimpleHTTPRequestHandler):
         path, q, id, ok = self.id()
         if path.startswith('/db/'): return self.reply(403, '{"error":"forbidden"}')
         if path != '/api.php': return super().do_GET()
+        if 'list' in q:
+            out = []
+            for i in os.listdir(DB):
+                d = os.path.join(DB, i); vs = versions(d)
+                if not vs: continue
+                f = os.path.join(d, f'{vs[-1]}.json'); p = json.load(open(f))
+                out.append({'id': i, 'name': p.get('name', ''), 'author': p.get('author', ''), 'versions': vs, 't': int(os.path.getmtime(f))})
+            return self.reply(200, json.dumps(sorted(out, key=lambda x: -x['t'])))
         d = os.path.join(DB, id)
         vs = versions(d) if ok and id else []
         if not vs: return self.reply(404, '{"error":"not found"}')

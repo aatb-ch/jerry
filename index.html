@@ -73,6 +73,13 @@
   .seg button.on { background: #1f5f9e; border-color: #2b77c2; position: relative; }
   #credit { position: fixed; bottom: 10px; left: 50%; transform: translateX(-50%); font-size: 12px; color: var(--mut); }
   #credit a { color: var(--fg); text-decoration: none; } #credit a:hover { color: var(--acc); }
+  dialog { background: #20262c; color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 12px; width: min(640px, 92vw); }
+  dialog::backdrop { background: rgba(0,0,0,.5); }
+  #loadList { max-height: 60vh; overflow: auto; margin-top: 8px; }
+  #loadList table { width: 100%; border-collapse: collapse; }
+  #loadList td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
+  #loadList td.m { color: var(--mut); white-space: nowrap; }
+  #loadList tr:hover td { background: #2a3138; }
   .chk { display: flex; gap: 6px; align-items: center; color: var(--mut); flex: 0 0 auto; }
 </style>
 </head>
@@ -99,7 +106,7 @@
   </section>
   <section>
     <h3>Program</h3>
-    <div class="row"><input id="progName" placeholder="Program name"></div>
+    <div class="row"><input id="progName" placeholder="Program name"><input id="progAuthor" placeholder="Author"></div>
     <div class="row">
       <button class="pri" id="btnRun">▶ Run</button>
       <button id="btnStep">▶ Line</button>
@@ -107,6 +114,7 @@
     </div>
     <div class="row">
       <button id="btnSave">Save</button>
+      <button id="btnLoad">Load</button>
       <button id="btnNew">New</button>
     </div>
   </section>
@@ -157,6 +165,11 @@
     <div id="props"></div>
   </section>
 </div>
+
+<dialog id="loadDlg">
+  <div class="row"><input id="loadFilter" placeholder="Filter by name or author"><button class="sm" id="loadClose">Close</button></div>
+  <div id="loadList"></div>
+</dialog>
 
 <div id="credit"><a href="https://github.com/aatb-ch/jerry" target="_blank" rel="noopener">Jerry</a> by <a href="https://aatb.ch" target="_blank" rel="noopener">AATB</a></div>
 
