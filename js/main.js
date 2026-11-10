@@ -568,7 +568,7 @@ function log(msg, err) {
   while (L.childElementCount > 300) L.firstChild.remove();
   L.scrollTop = L.scrollHeight;
 }
-robot.onLog = m => { if (!/^> M(9|12|114)\b|^< (DATA: )?(ANGLES|COORDS)|^< INFO: ABSOLUTE MODE/.test(m)) log(m); }; // hide poll chatter
+robot.onLog = m => { if (!/^[<>] M(9|12|114)\b|^< (DATA: )?(ANGLES|COORDS)|^< INFO: ABSOLUTE MODE/.test(m)) log(m); }; // hide poll chatter
 
 // ---------------- wiring ----------------
 const guard = fn => async (...a) => { try { await fn(...a); } catch (e) { log(e.message, true); } renderButtons(); };
