@@ -15,7 +15,7 @@ export function parseSvg(text) {
   host.appendChild(document.importNode(svg, true));
   document.body.appendChild(host);
   try {
-    const root = host.firstChild, bb = root.getBBox(), step = Math.max(bb.width, bb.height) / 500 || 1;
+    const root = host.firstChild, bb = root.getBBox(), step = Math.max(bb.width, bb.height) / 4000 || 1; // fine: the plot node decides the final resolution
     const strokes = [];
     for (const el of root.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')) {
       if (el.closest('defs,clipPath,mask,symbol,marker')) continue;
@@ -34,9 +34,9 @@ export function parseSvg(text) {
     const all = strokes.flat(), xs = all.map(p => p[0]), ys = all.map(p => p[1]);
     const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
     mmPerUnit ??= 80 / Math.max(x1 - x0, y1 - y0, 1e-9);
-    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = v => Math.round(v * 100) / 100;
+    const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
     return {
-      strokes: strokes.map(s => simplify(s.map(([x, y]) => [r((x - cx) * mmPerUnit), r((cy - y) * mmPerUnit)]), 0.02)),
+      strokes: strokes.map(s => simplify(s.map(([x, y]) => [(x - cx) * mmPerUnit, (cy - y) * mmPerUnit]), 0.002).map(p => p.map(r3))),
       w: r((x1 - x0) * mmPerUnit), h: r((y1 - y0) * mmPerUnit),
     };
   } finally { host.remove(); }

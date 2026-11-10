@@ -77,14 +77,15 @@ const nodeBad = n => (n.type === 'movej' || n.type === 'movel') && (!wpById(n.wp
   || n.type === 'svg' && plotTargets(n).some(t => !t.j);
 
 // SVG plot: strokes (mm, drawing frame) → robot-frame targets. Anchor = drawing centre, pose relative to the base frame;
-// pen goes down along the anchor's −Z from the approach height. Curves are simplified to 0.2 mm.
+// pen goes down along the anchor's −Z from the approach height. Curves become straight segments that stay within
+// n.tol mm of the true curve (Ramer–Douglas–Peucker at the drawn size): smaller = more, shorter segments, smoother curves.
 function plotTargets(n) {
   const a = n.anchor;
   const A = new THREE.Matrix4().compose(new THREE.Vector3(a.x, a.y, a.z),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(a.rx * R, a.ry * R, a.rz * R, 'XYZ')), new THREE.Vector3(1, 1, 1)).premultiply(M);
   const out = [], add = (x, y, z) => { const p = new THREE.Vector3(x * n.scale, y * n.scale, z).applyMatrix4(A).toArray(); out.push({ p, j: ik(p) }); };
   for (const s of n.strokes) {
-    const pts = simplify(s, 0.2 / n.scale);  // 0.2 mm chord tolerance at the drawn size
+    const pts = simplify(s, (n.tol ?? 0.2) / n.scale);
     add(...pts[0], n.approach);
     pts.forEach(q => add(...q, 0));
     add(...pts.at(-1), n.approach);
@@ -207,6 +208,9 @@ function renderProps() {
       html += trip('Anchor °', ['rx', 'ry', 'rz'].map(k => num('a' + k, a[k], v => { a[k] = v; })));
       html += field('Approach', num('approach', n.approach, v => { n.approach = v; }));
       html += field('Speed', num('speed', n.speed, v => { n.speed = Math.max(1, Math.min(200, v)); }));
+      html += field('Curve tol.', num('tol', n.tol ?? 0.2, v => { n.tol = Math.max(0.005, v); }, 0.01));
+      const T = plotTargets(n), segs = T.length - 3 * n.strokes.length;
+      html += `<div class="note" style="margin-bottom:6px">Curve tol. = how far (mm) the straight segments may stray from the true curve. Smaller = smoother curves, more moves (now ${segs} segments, ${T.length} moves).</div>`;
       html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes.</div>`;
       html += btns([['Load SVG…', 'svgload'], ['Anchor at TCP', 'atcp']]);
       acts.svgload = () => pickFile('.svg,image/svg+xml', async f => { Object.assign(n, parseSvg(await f.text()), { file: f.name }); });
@@ -448,7 +452,7 @@ function addWaypoint(capture) {
 
 function addNode(type) {
   const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] },
-    svg: { file: '', strokes: [], w: 0, h: 0, scale: 1, anchor: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, approach: 20, speed: 50 } };
+    svg: { file: '', strokes: [], w: 0, h: 0, scale: 1, anchor: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, approach: 20, speed: 50, tol: 0.05 } };
   const n = { id: uid(), type, ...structuredClone(defaults[type] || {}) };
   if (type === 'movej' || type === 'movel') n.wp = wpById(sel)?.id || prog.waypoints.at(-1)?.id || addWaypoint(true).id;
   const f = find(sel);
