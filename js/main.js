@@ -83,12 +83,12 @@ function plotTargets(n) {
   const a = n.anchor;
   const A = new THREE.Matrix4().compose(new THREE.Vector3(a.x, a.y, a.z),
     new THREE.Quaternion().setFromEuler(new THREE.Euler(a.rx * R, a.ry * R, a.rz * R, 'XYZ')), new THREE.Vector3(1, 1, 1)).premultiply(M);
-  const out = [], add = (x, y, z) => { const p = new THREE.Vector3(x * n.scale, y * n.scale, z).applyMatrix4(A).toArray(); out.push({ p, j: ik(p) }); };
+  const out = [], add = (x, y, z, end) => { const p = new THREE.Vector3(x * n.scale, y * n.scale, z).applyMatrix4(A).toArray(); out.push({ p, j: ik(p), end }); };
   for (const s of n.strokes) {
     const pts = simplify(s, (n.tol ?? 0.2) / n.scale);
     add(...pts[0], n.approach);
     pts.forEach(q => add(...q, 0));
-    add(...pts.at(-1), n.approach);
+    add(...pts.at(-1), n.approach, true); // pen lifted: end of stroke
   }
   return out;
 }
@@ -392,6 +392,17 @@ async function sendL(from, to, speed) {
   }
 }
 
+// keep the firmware queue short (pymycobot pauses above 90 queued moves); if M120 isn't answered, drain instead
+async function waitQueue() {
+  for (;;) {
+    if (abort) throw STOP;
+    const q = await robot.queueSize().catch(() => null);
+    if (q === null || isNaN(q)) return robot.waitIdle(() => abort, 120000);
+    if (q < 40) return;
+    await sleep(200);
+  }
+}
+
 async function exec(n) {
   if (abort) throw STOP;
   if (n.id) { runId = n.id; renderTree(); }
@@ -419,12 +430,23 @@ async function exec(n) {
       const T = plotTargets(n);
       if (!T.length) throw new Error('plot has no SVG loaded');
       if (T.some(t => !t.j)) throw new Error('drawing leaves the workspace');
-      for (const [i, t] of T.entries()) {   // joint move to the first approach point, then linear moves
-        if (abort) throw STOP;
-        if (on) i ? await sendL(T[i - 1].p, t.p, n.speed) : await robot.movej(t.j, n.speed);
-        i ? await animL(t.p, n.speed, 1) : await animJ(t.j, n.speed);
-        if (on) await robot.waitIdle(() => abort);
-      }
+      // Joint move to the first approach point, then linear moves. On the arm each stroke is streamed in constant
+      // speed mode (moves blend, no stop at every point, like pymycobot's G-code player); we wait for the arm only
+      // after each pen lift, so Stop takes effect at the end of the current stroke.
+      if (on) await robot.speedMode(0);
+      try {
+        let sent = 0;
+        for (const [i, t] of T.entries()) {
+          if (abort) throw STOP;
+          if (on) {
+            if (i) await sendL(T[i - 1].p, t.p, n.speed); else await robot.movej(t.j, n.speed);
+            await sleep(20); // pymycobot's pace: don't overrun the board's serial buffer
+            if (++sent % 20 === 0) await waitQueue();
+          }
+          i ? await animL(t.p, n.speed, 1) : await animJ(t.j, n.speed);
+          if (on && (i === 0 || t.end)) await robot.waitIdle(() => abort, 120000);
+        }
+      } finally { if (on && robot.open) await robot.speedMode(2).catch(() => {}); }
       if (on) setCur(await syncFromRobot().catch(() => cur));
       break;
     }

@@ -64,7 +64,7 @@ export class Robot {
   enabled = true; // global gate: when false only read-only queries go out
   send(cmd) {
     if (!this.port) throw new Error('not connected');
-    if (!this.enabled && !/^(M9|M12|M114)$/.test(cmd)) throw new Error('sending to robot is off');
+    if (!this.enabled && !/^(M9|M12|M114|M120)$/.test(cmd)) throw new Error('sending to robot is off');
     this.onLog('> ' + cmd);
     let t;
     return Promise.race([
@@ -101,6 +101,10 @@ export class Robot {
   async home() { await this.query('G28', /ok/i, 120000); } // pymycobot waits for "ok" with no timeout
   async getAngles() { return mj(await this.nums('M12', 'ANGLES')); }
   async getCoords() { return m(await this.nums('M114', 'COORDS')); }
+  // M16: S0 = constant speed (moves blend, used when streaming), S2 = accel/decel per move (default)
+  speedMode(s) { return this.write('M16 S' + s); }
+  // number of moves waiting in the firmware queue (pymycobot: reply contains "QUEUE SIZE[n]")
+  async queueSize() { const l = await this.query('M120', /QUEUE SIZE/i, 1000); return parseInt(l.slice(l.indexOf('[') + 1)); }
   movej(j, speed) { j = mj(j); return this.write(`M11 X${f2(j[0])} Y${f2(j[1])} Z${f2(j[2])} F${speed | 0}`); }
   movel(p, speed) { p = m(p); return this.write(`G0 X${f2(p[0])} Y${f2(p[1])} Z${f2(p[2])} F${speed | 0}`); }
 
