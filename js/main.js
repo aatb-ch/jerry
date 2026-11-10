@@ -461,10 +461,10 @@ async function exec(n) {
   }
 }
 
-async function run(node) {
+async function run(node, repeat = () => false) {
   if (running) return;
   running = true; abort = false; runLive = live(); renderButtons();
-  try { await exec(node); log('done'); }
+  try { do { await exec(node); await sleep(50); } while (repeat() && !abort); log('done'); }
   catch (e) { log(e === STOP ? 'stopped' : 'error: ' + e.message, e !== STOP); }
   running = false; runId = null; refresh();
 }
@@ -569,7 +569,7 @@ $('loadList').addEventListener('click', e => {
 $('loadFilter').addEventListener('input', renderLoad);
 $('loadClose').onclick = () => $('loadDlg').close();
 
-function setProgram(p) { prog = p; sel = null; updateBase(); refresh(); }
+function setProgram(p) { prog = p; sel = null; $('loopProg').checked = false; updateBase(); refresh(); }
 
 // ---------------- serial UI ----------------
 async function refreshPorts() {
@@ -644,7 +644,7 @@ $('btnAddPort').onclick = guard(addPort);
 $('btnPower').onclick = () => run({ type: 'poweron' });
 $('btnHome').onclick = () => run({ type: 'home' });
 $('btnRelease').onclick = () => run({ type: 'release' });
-$('btnRun').onclick = () => run(prog.root);
+$('btnRun').onclick = () => run(prog.root, () => $('loopProg').checked && prog.root.children.length > 0);
 $('btnStep').onclick = () => {
   const n = find(sel)?.node || (wpById(sel) && { type: 'movej', wp: sel, speed: +$('jogSpeed').value });
   if (n && n !== prog.root) run(n); else log('select a program line first', true);
