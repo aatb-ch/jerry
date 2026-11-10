@@ -3,3 +3,5 @@ db/*
 !db/.gitkeep
 .DS_Store
 .env
+deploy.sh
+dev_server.py
