@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { fk, ik } from './kin.js';
 import { Robot } from './serial.js';
+import { parseSvg, simplify } from './svg.js';
 import { arm, ghost, baseFrame, target, wpTarget, gizmo, setWaypoints, setPath, onPick } from './scene.js';
 
 const $ = id => document.getElementById(id);
@@ -55,7 +56,7 @@ function find(id, node = prog.root, parent = null) {
   for (const c of node.children || []) { const r = find(id, c, node); if (r) return r; }
   return null;
 }
-const ICON = { movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘' };
+const ICON = { movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎' };
 function nodeLabel(n) {
   const wp = n.wp && wpById(n.wp);
   switch (n.type) {
@@ -66,9 +67,27 @@ function nodeLabel(n) {
     case 'poweron': return 'Power on';
     case 'home': return 'Home';
     case 'release': return 'Release servos';
+    case 'svg': return `Plot ${n.file || '(no SVG)'}  (${n.strokes.length} strokes, ${n.speed})`;
   }
 }
-const nodeBad = n => (n.type === 'movej' || n.type === 'movel') && (!wpById(n.wp) || wpById(n.wp).bad);
+const nodeBad = n => (n.type === 'movej' || n.type === 'movel') && (!wpById(n.wp) || wpById(n.wp).bad)
+  || n.type === 'svg' && plotTargets(n).some(t => !t.j);
+
+// SVG plot: strokes (mm, drawing frame) → robot-frame targets. Anchor = drawing centre, pose relative to the base frame;
+// pen goes down along the anchor's −Z from the approach height. Curves are simplified to 0.2 mm.
+function plotTargets(n) {
+  const a = n.anchor;
+  const A = new THREE.Matrix4().compose(new THREE.Vector3(a.x, a.y, a.z),
+    new THREE.Quaternion().setFromEuler(new THREE.Euler(a.rx * R, a.ry * R, a.rz * R, 'XYZ')), new THREE.Vector3(1, 1, 1)).premultiply(M);
+  const out = [], add = (x, y, z) => { const p = new THREE.Vector3(x * n.scale, y * n.scale, z).applyMatrix4(A).toArray(); out.push({ p, j: ik(p) }); };
+  for (const s of n.strokes) {
+    const pts = simplify(s, 0.2 / n.scale);  // 0.2 mm chord tolerance at the drawn size
+    add(...pts[0], n.approach);
+    pts.forEach(q => add(...q, 0));
+    add(...pts.at(-1), n.approach);
+  }
+  return out;
+}
 
 // ---------------- rendering ----------------
 function renderTree() {
@@ -112,6 +131,11 @@ function programPath() {
     if (n.type === 'program') n.children.forEach(walk);
     if (n.type === 'loop') for (let i = 0; i < Math.min(n.count, 2); i++) n.children.forEach(walk);
     if (n.type === 'home') goJ([0, 0, 0]);
+    if (n.type === 'svg') {
+      const T = plotTargets(n);
+      if (!T.length || T.some(t => !t.j)) return;
+      goJ(T[0].j); T.slice(1).forEach(t => pts.push(t.p)); j = T.at(-1).j;
+    }
     const w = wpById(n.wp);
     if (!w || w.bad) return;
     if (n.type === 'movej') goJ(w.joints);
@@ -165,6 +189,20 @@ function renderProps() {
       html += btns([['New WP from TCP', 'nwp'], ['Run line', 'line']]);
       acts.nwp = () => { n.wp = addWaypoint(true).id; sel = n.id; };
     }
+    if (n.type === 'svg') {
+      const a = n.anchor;
+      html += field('SVG', `<span class="note">${esc(n.file || 'none')}${n.file ? ` · ${fmt(n.w * n.scale)} × ${fmt(n.h * n.scale)} mm` : ''}</span>`);
+      if (nodeBad(n)) html += `<div class="warn">Part of the drawing is out of reach – move the anchor or scale it down.</div>`;
+      html += field('Scale', num('scale', n.scale, v => { n.scale = Math.max(0.01, v); }, 0.1));
+      html += trip('Anchor mm', ['x', 'y', 'z'].map(k => num('a' + k, a[k], v => { a[k] = v; })));
+      html += trip('Anchor °', ['rx', 'ry', 'rz'].map(k => num('a' + k, a[k], v => { a[k] = v; })));
+      html += field('Approach', num('approach', n.approach, v => { n.approach = v; }));
+      html += field('Speed', num('speed', n.speed, v => { n.speed = Math.max(1, Math.min(200, v)); }));
+      html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes.</div>`;
+      html += btns([['Load SVG…', 'svgload'], ['Anchor at TCP', 'atcp']]);
+      acts.svgload = () => pickFile('.svg,image/svg+xml', async f => { Object.assign(n, parseSvg(await f.text()), { file: f.name }); });
+      acts.atcp = () => { [a.x, a.y, a.z] = round(toBase(fk(cur))); };
+    }
     if (n.type === 'wait') html += field('Time ms', num('ms', n.ms, v => { n.ms = Math.max(0, v); }, 100));
     if (n.type === 'loop') html += field('Count', num('count', n.count, v => { n.count = Math.max(1, v | 0); }));
     if (!html.includes('data-act="line"')) html += btns([['Run line', 'line']]);
@@ -180,6 +218,12 @@ function renderProps() {
   }));
   el.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => { acts[b.dataset.act](); refresh(); }));
   if (focus) el.querySelector(`[data-k="${focus}"]`)?.focus();
+}
+
+function pickFile(accept, cb) {
+  const i = Object.assign(document.createElement('input'), { type: 'file', accept });
+  i.onchange = () => i.files[0] && guard(async () => { await cb(i.files[0]); refresh(); })();
+  i.click();
 }
 
 function refresh() { renderTree(); renderProps(); renderScene(); renderButtons(); }
@@ -303,9 +347,9 @@ function animJ(to, speed) {
   const from = [...cur], d = Math.max(...to.map((v, i) => Math.abs(v - from[i])));
   return animate(Math.max(150, d / speed * 1000), t => setCur(from.map((v, i) => v + (to[i] - v) * t)));
 }
-function animL(to, speed) {
+function animL(to, speed, min = 150) {
   const from = fk(cur), d = Math.hypot(...to.map((v, i) => v - from[i]));
-  return animate(Math.max(150, d / speed * 1000), t => {
+  return animate(Math.max(min, d / speed * 1000), t => {
     const j = ik(from.map((v, i) => v + (to[i] - v) * t));
     if (!j) throw new Error('linear path leaves workspace');
     setCur(j);
@@ -339,6 +383,19 @@ async function exec(n) {
       if (on) { await robot.waitIdle(() => abort); setCur(await syncFromRobot().catch(() => cur)); }
       break;
     }
+    case 'svg': {
+      const T = plotTargets(n);
+      if (!T.length) throw new Error('plot has no SVG loaded');
+      if (T.some(t => !t.j)) throw new Error('drawing leaves the workspace');
+      for (const [i, t] of T.entries()) {   // joint move to the first approach point, then linear moves
+        if (abort) throw STOP;
+        if (on) i ? await robot.movel(t.p, n.speed) : await robot.movej(t.j, n.speed);
+        i ? await animL(t.p, n.speed, 1) : await animJ(t.j, n.speed);
+        if (on) await robot.waitIdle(() => abort);
+      }
+      if (on) setCur(await syncFromRobot().catch(() => cur));
+      break;
+    }
   }
 }
 
@@ -362,7 +419,8 @@ function addWaypoint(capture) {
 }
 
 function addNode(type) {
-  const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] } };
+  const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] },
+    svg: { file: '', strokes: [], w: 0, h: 0, scale: 1, anchor: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, approach: 20, speed: 50 } };
   const n = { id: uid(), type, ...structuredClone(defaults[type] || {}) };
   if (type === 'movej' || type === 'movel') n.wp = wpById(sel)?.id || prog.waypoints.at(-1)?.id || addWaypoint(true).id;
   const f = find(sel);

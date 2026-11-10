@@ -8,6 +8,7 @@ Jerry, a simple online/offline programming environment for the Elephant Robotics
 - TCP and base coordinate systems
 - Waypoints: capture from the TCP, edit numerically or drag in 3D
 - Program tree: MoveJ, MoveL, wait, loops, power on, home, release
+- SVG plotting: load an SVG, place it with an anchor pose, set scale, approach height and speed
 - Run on the virtual robot for preview, or on the real arm via Web Serial
 - Path preview of the TCP trajectory
 - Programs saved to a flat-file db, reloaded via a URL GUID, with versioning
@@ -32,6 +33,7 @@ The robot connects over Web Serial, which needs Chrome or Edge on HTTPS or local
 | `js/scene.js` | three.js scene, arm model, waypoints, gizmo, path preview |
 | `js/kin.js` | forward/inverse kinematics and arm dimensions |
 | `js/serial.js` | Web Serial + ultraArm G-code protocol |
+| `js/svg.js` | SVG → simplified pen strokes in mm |
 | `api.php` | storage: `db/<guid>/<version>.json` |
 
 ## License
