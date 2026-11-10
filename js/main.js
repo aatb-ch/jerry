@@ -539,7 +539,7 @@ async function addPort() {
 }
 
 async function toggleConnection() {
-  if (robot.open) { await robot.disconnect(); log('closed'); real = null; return; }
+  if (robot.port) { await robot.disconnect(); log('closed'); real = null; return; }
   const port = $('port').value === '' ? await addPort() : (await navigator.serial.getPorts())[+$('port').value];
   log('opening…');
   await robot.connect(port, +$('baud').value);

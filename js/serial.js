@@ -11,19 +11,26 @@ export class Robot {
   port = null; writer = null; reader = null; buf = ''; waiters = [];
   onLog = () => {};
 
-  get open() { return !!this.port; }
+  ready = false; // true once the board has booted: nothing is sent before that
+  get open() { return this.ready; }
 
   async connect(port, baudRate) {
     await port.open({ baudRate });
     this.port = port; this.q = Promise.resolve(); this.waiters = []; this.buf = '';
     this.writer = port.writable.getWriter();
     this.readLoop();
-    await sleep(1500); // board resets on open
+    // Opening the port resets the board. Stay silent until it has booted: bytes sent while its
+    // bootloader is listening can keep it there, and then it never answers anything.
+    const booted = await this.waitFor(/ROBOT ONLINE/i, 5000).then(() => true, () => false);
+    if (this.port !== port) throw new Error('port closed');
+    this.onLog(booted ? 'robot booted' : 'no boot message (board did not reset)');
+    await sleep(500);
+    this.ready = true;
   }
 
   async disconnect() {
     const p = this.port; if (!p) return;
-    this.port = null;
+    this.port = null; this.ready = false;
     this.cancel('port closed'); this.q = Promise.resolve(); // nothing from this session may block the next one
     try { await this.reader?.cancel(); } catch {}
     try { this.writer.releaseLock(); } catch {}
