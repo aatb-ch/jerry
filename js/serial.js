@@ -101,6 +101,8 @@ export class Robot {
   async home() { await this.query('G28', /ok/i, 120000); } // pymycobot waits for "ok" with no timeout
   async getAngles() { return mj(await this.nums('M12', 'ANGLES')); }
   async getCoords() { return m(await this.nums('M114', 'COORDS')); }
+  // digital outputs (pymycobot): 'gpio' = the GPIO/suction pump output (M22 on / M23 off), 'fan' = fan output (M27 / M28)
+  setDO(out, on) { return this.write({ gpio: on ? 'M22' : 'M23', fan: on ? 'M27' : 'M28' }[out]); }
   // M16: S0 = constant speed (moves blend, used when streaming), S2 = accel/decel per move (default)
   speedMode(s) { return this.write('M16 S' + s); }
   // number of moves waiting in the firmware queue (pymycobot: reply contains "QUEUE SIZE[n]")

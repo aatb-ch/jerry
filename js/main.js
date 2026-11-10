@@ -59,7 +59,7 @@ function find(id, node = prog.root, parent = null) {
   for (const c of node.children || []) { const r = find(id, c, node); if (r) return r; }
   return null;
 }
-const ICON = { movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎' };
+const ICON = { movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎', do: '⚡' };
 function nodeLabel(n) {
   const wp = n.wp && wpById(n.wp);
   switch (n.type) {
@@ -70,6 +70,7 @@ function nodeLabel(n) {
     case 'poweron': return 'Power on';
     case 'home': return 'Home';
     case 'release': return 'Release servos';
+    case 'do': return `Set ${n.out === 'fan' ? 'fan' : 'GPIO'} ${n.on ? 'ON' : 'OFF'}`;
     case 'svg': return `Plot ${n.file || '(no SVG)'}  (${n.strokes.length} strokes, ${n.speed})`;
   }
 }
@@ -215,6 +216,12 @@ function renderProps() {
       html += btns([['Load SVG…', 'svgload'], ['Anchor at TCP', 'atcp']]);
       acts.svgload = () => pickFile('.svg,image/svg+xml', async f => { Object.assign(n, parseSvg(await f.text()), { file: f.name }); });
       acts.atcp = () => { [a.x, a.y, a.z] = round(toBase(fk(cur))); };
+    }
+    if (n.type === 'do') {
+      binds.out = v => { n.out = v; }; binds.on = v => { n.on = v === '1'; };
+      html += field('Output', `<select data-k="out"><option value="gpio" ${n.out === 'gpio' ? 'selected' : ''}>GPIO (suction pump)</option><option value="fan" ${n.out === 'fan' ? 'selected' : ''}>Fan</option></select>`);
+      html += field('State', `<select data-k="on"><option value="1" ${n.on ? 'selected' : ''}>ON</option><option value="0" ${n.on ? '' : 'selected'}>OFF</option></select>`);
+      html += `<div class="note" style="margin-bottom:6px">Switches one of the arm's digital outputs (GPIO = M22/M23, fan = M27/M28). Runs after the previous move has finished.</div>`;
     }
     if (n.type === 'wait') html += field('Time ms', num('ms', n.ms, v => { n.ms = Math.max(0, v); }, 100));
     if (n.type === 'loop') html += field('Count', num('count', n.count, v => { n.count = Math.max(1, v | 0); }));
@@ -412,6 +419,7 @@ async function exec(n) {
     case 'loop': for (let i = 0; i < n.count; i++) for (const c of n.children) await exec(c); break;
     case 'wait': await waitAbortable(n.ms); break;
     case 'poweron': if (on) { await robot.powerOn(); await sleep(300); } break;
+    case 'do': if (on) { await robot.setDO(n.out, n.on); await sleep(100); } else log(`(sim) ${nodeLabel(n)}`); break;
     case 'release': if (on) { await robot.release(); await sleep(300); } break;
     case 'home':
       if (on) { log('homing…'); await abortable(robot.home()); setCur(await syncFromRobot().catch(() => [0, 0, 0])); }
@@ -473,7 +481,7 @@ function addWaypoint(capture) {
 }
 
 function addNode(type) {
-  const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] },
+  const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] }, do: { out: 'gpio', on: true },
     svg: { file: '', strokes: [], w: 0, h: 0, scale: 1, anchor: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, approach: 20, speed: 50, tol: 0.05 } };
   const n = { id: uid(), type, ...structuredClone(defaults[type] || {}) };
   if (type === 'movej' || type === 'movel') n.wp = wpById(sel)?.id || prog.waypoints.at(-1)?.id || addWaypoint(true).id;
