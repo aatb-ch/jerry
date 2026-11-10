@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/addons/renderers/CSS2DRenderer.js';
-import { K } from './kin.js';
+import { K, tool } from './kin.js';
 
 const R = Math.PI / 180;
 THREE.Object3D.DEFAULT_UP.set(0, 0, 1);
@@ -74,7 +74,9 @@ function makeArm(ghost) {
   box(wr, K.E + 10, 26, 16, K.E / 2, 0, 0, 0x2b2f35);
   cyl(wr, 12, K.D, K.E, 0, -K.D / 2, 0x8a939d);
   const tip = new THREE.Mesh(new THREE.SphereGeometry(5, 16, 12), mat(0xff7a2f));
-  tip.position.set(K.E, 0, -K.D); wr.add(tip);
+  wr.add(tip);
+  const toolLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(K.E, 0, -K.D), new THREE.Vector3()]), new THREE.LineBasicMaterial({ color: 0xff7a2f }));
+  wr.add(toolLine);
 
   root.setJoints = ([a, b, c]) => {
     j1.rotation.z = a * R;
@@ -82,6 +84,9 @@ function makeArm(ghost) {
     el.position.set(K.A0 + K.L1 * Math.sin(b * R), 0, K.SH + K.L1 * Math.cos(b * R));
     el.rotation.y = c * R;
     wr.position.set(el.position.x + K.L2 * Math.cos(c * R), 0, el.position.z - K.L2 * Math.sin(c * R));
+    tip.position.set(K.E + tool[0], tool[1], -K.D + tool[2]); // orange ball = TCP, line from the flange
+    toolLine.geometry.attributes.position.setXYZ(1, tip.position.x, tip.position.y, tip.position.z);
+    toolLine.geometry.attributes.position.needsUpdate = true;
   };
   return root;
 }

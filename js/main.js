@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fk, ik } from './kin.js';
+import { fk, ik, flange, addTool, setTool, tool } from './kin.js';
 import { Robot } from './serial.js';
 import { parseSvg, simplify } from './svg.js';
 import { arm, ghost, baseFrame, target, wpTarget, gizmo, setWaypoints, setPath, onPick } from './scene.js';
@@ -20,6 +20,7 @@ const newProgram = () => ({
   name: 'Untitled',
   author: '',
   base: { x: 200, y: 0, z: 0, rx: 0, ry: 0, rz: 0 },
+  tool: { x: 0, y: 0, z: 0 }, // TCP offset from the flange (flange frame); 0 = TCP at the flange
   waypoints: [],
   root: { id: 'root', type: 'program', children: [] },
 });
@@ -27,13 +28,15 @@ const newProgram = () => ({
 // ---------------- base frame math ----------------
 let M = new THREE.Matrix4(), Minv = new THREE.Matrix4(), Q = new THREE.Quaternion();
 function updateBase() {
-  const b = prog.base;
+  const b = prog.base, t = prog.tool ||= { x: 0, y: 0, z: 0 };
+  setTool([t.x, t.y, t.z]);
   Q.setFromEuler(new THREE.Euler(b.rx * R, b.ry * R, b.rz * R, 'XYZ'));
   M.compose(new THREE.Vector3(b.x, b.y, b.z), Q, new THREE.Vector3(1, 1, 1));
   Minv.copy(M).invert();
   baseFrame.position.set(b.x, b.y, b.z);
   baseFrame.quaternion.copy(Q);
   prog.waypoints.forEach(w => updateWp(w, 'pos'));
+  setCur(cur); // TCP marker / gizmo follow a tool change
 }
 const toRobot = p => new THREE.Vector3(...p).applyMatrix4(M).toArray();
 const toBase = p => new THREE.Vector3(...p).applyMatrix4(Minv).toArray();
@@ -96,7 +99,7 @@ function renderTree() {
   const nodes = list => `<ul>${list.map(n => `<li>${item(n.id, ICON[n.type], nodeLabel(n), nodeBad(n))}${n.children ? nodes(n.children) : ''}</li>`).join('')}</ul>`;
   $('tree').innerHTML =
     `<div class="tree">` +
-    `<div class="group">Setup</div>${item('base', '⌖', `Base (${fmt(prog.base.x)}, ${fmt(prog.base.y)}, ${fmt(prog.base.z)})`)}` +
+    `<div class="group">Setup</div>${item('base', '⌖', `Base (${fmt(prog.base.x)}, ${fmt(prog.base.y)}, ${fmt(prog.base.z)})`)}${item('tool', '⊥', `Tool (${fmt(prog.tool.x)}, ${fmt(prog.tool.y)}, ${fmt(prog.tool.z)})`)}` +
     `<div class="group">Waypoints</div>${prog.waypoints.map(w => item(w.id, '◆', `${w.name}  (${w.pos.map(fmt).join(', ')})`, w.bad)).join('') || '<div class="note">none yet</div>'}` +
     `<div class="group">Program</div>${prog.root.children.length ? nodes(prog.root.children) : '<div class="note">empty – use the buttons below</div>'}` +
     `</div>`;
@@ -165,6 +168,12 @@ function renderProps() {
     html += btns([['Set origin to TCP', 'tcp'], ['Reset', 'reset']]);
     acts.tcp = () => { [b.x, b.y, b.z] = round(fk(cur)); updateBase(); };
     acts.reset = () => { Object.assign(b, newProgram().base); updateBase(); };
+  } else if (sel === 'tool') {
+    const t = prog.tool, s = k => v => { t[k] = v; updateBase(); };
+    html += `<div class="note" style="margin-bottom:8px">TCP offset from the robot flange, in the flange frame: x forward, y left, z up (turns with J1, stays level). All 0 = TCP at the flange. Waypoints keep their position, so the arm moves the flange to bring the TCP there.</div>`;
+    html += trip('Offset mm', ['x', 'y', 'z'].map(k => num(k, t[k], s(k))));
+    html += btns([['Reset to flange', 'reset']]);
+    acts.reset = () => { Object.assign(t, newProgram().tool); updateBase(); };
   } else if (wpById(sel)) {
     const w = wpById(sel);
     html += `<div class="note" style="margin-bottom:8px">Drag the gizmo to move this waypoint. Click the robot to drag the TCP again.</div>`;
@@ -208,7 +217,7 @@ function renderProps() {
     if (!html.includes('data-act="line"')) html += btns([['Run line', 'line']]);
     acts.line = () => run(n);
   } else {
-    html = `<div class="note">Select a node, waypoint or the base in the tree (or click a waypoint in 3D). Click the robot to drag the TCP.</div>`;
+    html = `<div class="note">Select a node, waypoint, the base or the tool in the tree (or click a waypoint in 3D). Click the robot to drag the TCP.</div>`;
   }
 
   el.innerHTML = html;
@@ -244,7 +253,7 @@ function renderReadout() {
   $('readout').innerHTML =
     `<span></span><span>1 / X</span><span>2 / Y</span><span>3 / Z</span>` +
     row('Sim J', cur) + row('Sim rob', p) + row('Sim base', b) +
-    row('Real J', real?.j) + row('Real rob', real?.p);
+    row('Real J', real?.j) + row('Real rob', real?.p && addTool(real.p, real.j[0])); // arm reports the flange
   // jog row values
   const f = jogFrame, vals = f === 'joint' ? cur : f === 'robot' ? p : b;
   document.querySelectorAll('#jogRows .v').forEach((e, i) => { e.textContent = fmt(vals[i]); });
@@ -281,7 +290,7 @@ function sendJog(kind) {
   if (!live()) return;
   const j = [...cur], f = +$('jogSpeed').value;
   lastCmdT = performance.now();
-  jogChain = jogChain.then(() => kind === 'j' ? robot.movej(j, f) : robot.movel(fk(j), f)).catch(e => log(e.message, true));
+  jogChain = jogChain.then(() => kind === 'j' ? robot.movej(j, f) : robot.movel(flange(j), f)).catch(e => log(e.message, true));
 }
 
 // gizmo drag: stream targets to the robot, throttled (firmware queues moves; don't flood it)
@@ -368,6 +377,17 @@ const abortable = p => new Promise((res, rej) => {
   p.then(v => { clearInterval(t); res(v); }, e => { clearInterval(t); rej(e); });
 });
 
+// Linear TCP move on the arm. The firmware moves the flange in a straight line; with a sideways/forward tool
+// offset the TCP would then curve (the offset turns with J1), so split into short pieces it can follow.
+async function sendL(from, to, speed) {
+  const steps = tool[0] || tool[1] ? Math.max(1, Math.ceil(Math.hypot(...to.map((v, i) => v - from[i])) / 5)) : 1;
+  for (let s = 1; s <= steps; s++) {
+    const j = ik(from.map((v, i) => v + (to[i] - v) * s / steps));
+    if (!j) throw new Error('linear move leaves the workspace');
+    await robot.movel(flange(j), speed);
+  }
+}
+
 async function exec(n) {
   if (abort) throw STOP;
   if (n.id) { runId = n.id; renderTree(); }
@@ -386,7 +406,7 @@ async function exec(n) {
       const w = wpById(n.wp);
       if (!w) throw new Error('move has no waypoint');
       if (w.bad) throw new Error(`waypoint ${w.name} unreachable`);
-      if (on) n.type === 'movej' ? await robot.movej(w.joints, n.speed) : await robot.movel(w.robotPos, n.speed);
+      if (on) n.type === 'movej' ? await robot.movej(w.joints, n.speed) : await sendL(fk(cur), w.robotPos, n.speed);
       n.type === 'movej' ? await animJ(w.joints, n.speed) : await animL(w.robotPos, n.speed);
       if (on) { await robot.waitIdle(() => abort); setCur(await syncFromRobot().catch(() => cur)); }
       break;
@@ -397,7 +417,7 @@ async function exec(n) {
       if (T.some(t => !t.j)) throw new Error('drawing leaves the workspace');
       for (const [i, t] of T.entries()) {   // joint move to the first approach point, then linear moves
         if (abort) throw STOP;
-        if (on) i ? await robot.movel(t.p, n.speed) : await robot.movej(t.j, n.speed);
+        if (on) i ? await sendL(T[i - 1].p, t.p, n.speed) : await robot.movej(t.j, n.speed);
         i ? await animL(t.p, n.speed, 1) : await animJ(t.j, n.speed);
         if (on) await robot.waitIdle(() => abort);
       }

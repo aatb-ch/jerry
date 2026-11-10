@@ -18,18 +18,36 @@ export const K = {
 const R = Math.PI / 180;
 
 const within = (v, l) => v.every((x, i) => x >= l[i][0] - 1e-6 && x <= l[i][1] + 1e-6);
-export const inLimits = j => within(j, K.lim) && within(fk(j), K.box);
+export const inLimits = j => within(j, K.lim) && within(flange(j), K.box);
 
-export function fk([j1, j2, j3]) {
+// Tool: TCP offset from the flange, in the flange frame (x forward, y left, z up; it turns with J1, stays level).
+// [0, 0, 0] = TCP at the flange. The arm itself only knows flange coordinates (what M114 / G0 use).
+export const tool = [0, 0, 0];
+export const setTool = t => tool.splice(0, 3, ...t);
+
+// flange position (robot frame) for joints
+export function flange([j1, j2, j3]) {
   const r = K.A0 + K.L1 * Math.sin(j2 * R) + K.L2 * Math.cos(j3 * R) + K.E;
   const z = K.SH + K.L1 * Math.cos(j2 * R) - K.L2 * Math.sin(j3 * R) - K.D;
   return [r * Math.cos(j1 * R), r * Math.sin(j1 * R), z];
 }
 
-// returns [j1,j2,j3] or null if unreachable / out of joint limits
+// flange point + tool offset → TCP
+export function addTool([x, y, z], j1) {
+  const c = Math.cos(j1 * R), s = Math.sin(j1 * R);
+  return [x + tool[0] * c - tool[1] * s, y + tool[0] * s + tool[1] * c, z + tool[2]];
+}
+
+// TCP position (robot frame) for joints
+export const fk = j => addTool(flange(j), j[0]);
+
+// TCP position → [j1,j2,j3], or null if unreachable / out of limits
 export function ik([x, y, z]) {
-  const j1 = Math.atan2(y, x) / R;
-  const r = Math.hypot(x, y) - K.A0 - K.E, h = z - K.SH + K.D;
+  const rt2 = x * x + y * y - tool[1] ** 2;  // TCP distance from the J1 axis, along the flange's forward direction
+  if (rt2 < 0) return null;
+  const rt = Math.sqrt(rt2);
+  const j1 = (Math.atan2(y, x) - Math.atan2(tool[1], rt)) / R;
+  const r = rt - tool[0] - K.A0 - K.E, h = z - tool[2] - K.SH + K.D;
   const d = Math.hypot(r, h);
   const c = (K.L1 ** 2 + d * d - K.L2 ** 2) / (2 * K.L1 * d);
   if (!(Math.abs(c) <= 1)) return null;

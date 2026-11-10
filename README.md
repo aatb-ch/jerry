@@ -5,7 +5,7 @@ Jerry, a simple online/offline programming environment for the Elephant Robotics
 ## Features
 
 - Joint and Cartesian jogging, by buttons or by dragging the TCP gizmo
-- TCP and base coordinate systems
+- TCP and base coordinate systems; tool offset from the flange (default: TCP at the flange)
 - Waypoints: capture from the TCP, edit numerically or drag in 3D
 - Program tree: MoveJ, MoveL, wait, loops, power on, home, release
 - SVG plotting: load an SVG, place it with an anchor pose, set scale, approach height and speed
