@@ -14,6 +14,10 @@ Jerry, a simple online/offline programming environment for the Elephant Robotics
 - Programs saved to a flat-file db, reloaded via a URL GUID, with versioning, to allow easy save/load from different machines (personal laptops for offline programming -> save -> on machine that is connected to real hardware load their own file -> run)
 
 ![Jerry](docs/screenshot.webp)
+*Left pane: hardware control, scene save/load/new, base/TCP offset, program tree and editor. Right pane: jogging, node properties.*
+
+![Shared library](docs/library.webp)
+*Saved scenes show up in a shared library to easily load from a different machine with actual hardware, allowing easy prototyping offline, save and load for online playback.*
 
 ## Run
 
