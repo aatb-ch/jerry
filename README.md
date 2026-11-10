@@ -1,8 +1,16 @@
 # Jerry
 
-Jerry, a simple programming environment for the Elephant Robotics ultraArm P340, used during a workshop at Hong Kong Design Institute.
+Jerry, a simple programming environment for the Elephant Robotics ultraArm P340, used during a workshop at Hong Kong Design Institute. This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware.
 
-Supports joint/cartesian jogging, TCP/base coordinate systems, joint/cartesian moves, waypoint capture and editing, wait, loops. Programs are saved to a flat-file db and reloaded via a URL GUID, with versioning.
+## Features
+
+- Joint and Cartesian jogging, by buttons or by dragging the TCP gizmo
+- TCP and base coordinate systems
+- Waypoints: capture from the TCP, edit numerically or drag in 3D
+- Program tree: MoveJ, MoveL, wait, loops, power on, home, release
+- Run on the virtual robot for preview, or on the real arm via Web Serial
+- Path preview of the TCP trajectory
+- Programs saved to a flat-file db, reloaded via a URL GUID, with versioning
 
 ![Jerry](docs/screenshot.webp)
 
