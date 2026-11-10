@@ -362,7 +362,7 @@ async function waitAbortable(ms) {
 
 // let Stop/Esc interrupt a long wait on the robot (e.g. homing)
 const abortable = p => new Promise((res, rej) => {
-  const t = setInterval(() => { if (abort) { clearInterval(t); rej(STOP); } }, 50);
+  const t = setInterval(() => { if (abort) { clearInterval(t); robot.cancel(); rej(STOP); } }, 50);
   p.then(v => { clearInterval(t); res(v); }, e => { clearInterval(t); rej(e); });
 });
 

@@ -43,11 +43,6 @@ export class Robot {
           this.buf = this.buf.slice(i + 1);
           if (!line) continue;
           this.onLog('< ' + line);
-          // board rebooted (power dip / reset): fail whatever we were waiting for instead of hanging
-          if (/Restart board|ROBOT ONLINE/i.test(line)) {
-            const e = new Error(/Restart/i.test(line) ? "robot asks to 'Restart board' – power-cycle the arm, reconnect, then Home" : 'robot board rebooted – press Home');
-            this.waiters.forEach(w => w.reject(e)); this.waiters = [];
-          }
           this.waiters = this.waiters.filter(w => !(w.re.test(line) && (w.resolve(line), true)));
         }
       }
@@ -71,7 +66,14 @@ export class Robot {
     });
   }
 
-  async query(cmd, re, timeout) { const p = this.waitFor(re, timeout); await this.send(cmd); return p; }
+  // One command/response at a time (like pymycobot's lock): a background poll can never slip in
+  // between e.g. G28 and its "ok". The timeout starts when the command is actually sent.
+  q = Promise.resolve();
+  exclusive(fn) { const r = this.q.then(fn); this.q = r.catch(() => {}); return r; }
+  query(cmd, re, timeout) { return this.exclusive(async () => { const p = this.waitFor(re, timeout); await this.send(cmd); return p; }); }
+  write(cmd) { return this.exclusive(() => this.send(cmd)); }
+  // Stop: give up on whatever we wait for, so the queue frees up
+  cancel() { const e = new Error('stopped'); this.waiters.forEach(w => w.reject(e)); this.waiters = []; }
 
   async nums(cmd, tag) {
     const line = await this.query(cmd, new RegExp(tag + '\\['));
@@ -79,20 +81,19 @@ export class Robot {
   }
 
   // --- commands ---
-  powerOn() { return this.send('M18'); }
-  release() { return this.send('M17'); }
-  async home() { await this.query('G28', /ok/i, 60000); }
+  powerOn() { return this.write('M18'); }
+  release() { return this.write('M17'); }
+  async home() { await this.query('G28', /ok/i, 120000); } // pymycobot waits for "ok" with no timeout
   async getAngles() { return mj(await this.nums('M12', 'ANGLES')); }
   async getCoords() { return m(await this.nums('M114', 'COORDS')); }
-  movej(j, speed) { j = mj(j); return this.send(`M11 X${f2(j[0])} Y${f2(j[1])} Z${f2(j[2])} F${speed | 0}`); }
-  movel(p, speed) { p = m(p); return this.send(`G0 X${f2(p[0])} Y${f2(p[1])} Z${f2(p[2])} F${speed | 0}`); }
+  movej(j, speed) { j = mj(j); return this.write(`M11 X${f2(j[0])} Y${f2(j[1])} Z${f2(j[2])} F${speed | 0}`); }
+  movel(p, speed) { p = m(p); return this.write(`G0 X${f2(p[0])} Y${f2(p[1])} Z${f2(p[2])} F${speed | 0}`); }
 
-  // poll M9 until "Moving end"; throws on timeout or board restart (caller handles abort)
+  // poll M9 until "Moving end"; throws on timeout (caller handles abort)
   async waitIdle(isAborted, timeout = 30000) {
     const t0 = Date.now();
     while (!isAborted()) {
-      try { await this.query('M9', /Moving end/i, 300); return; }
-      catch (e) { if (/restarted/.test(e.message)) throw e; }
+      try { await this.query('M9', /Moving end/i, 300); return; } catch {}
       if (Date.now() - t0 > timeout) throw new Error('robot did not report end of move');
       await sleep(100);
     }
