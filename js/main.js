@@ -59,7 +59,7 @@ function find(id, node = prog.root, parent = null) {
   for (const c of node.children || []) { const r = find(id, c, node); if (r) return r; }
   return null;
 }
-const ICON = { movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎', do: '⚡' };
+const ICON = { movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎', do: '⚡', pwm: '∿', gripper: '✊' };
 function nodeLabel(n) {
   const wp = n.wp && wpById(n.wp);
   switch (n.type) {
@@ -71,6 +71,8 @@ function nodeLabel(n) {
     case 'home': return 'Home';
     case 'release': return 'Release servos';
     case 'do': return `Set ${n.out === 'fan' ? 'fan' : 'GPIO'} ${n.on ? 'ON' : 'OFF'}`;
+    case 'pwm': return `PWM ${n.value} / 255`;
+    case 'gripper': return n.action === 'zero' ? 'Gripper calibrate' : n.action === 'release' ? 'Gripper release' : `Gripper ${n.pos} % open  (${n.speed})`;
     case 'svg': return `Plot ${n.file || '(no SVG)'}  (${n.strokes.length} strokes, ${n.speed})`;
   }
 }
@@ -222,6 +224,19 @@ function renderProps() {
       html += field('Output', `<select data-k="out"><option value="gpio" ${n.out === 'gpio' ? 'selected' : ''}>GPIO (suction pump)</option><option value="fan" ${n.out === 'fan' ? 'selected' : ''}>Fan</option></select>`);
       html += field('State', `<select data-k="on"><option value="1" ${n.on ? 'selected' : ''}>ON</option><option value="0" ${n.on ? '' : 'selected'}>OFF</option></select>`);
       html += `<div class="note" style="margin-bottom:6px">Switches one of the arm's digital outputs (GPIO = M22/M23, fan = M27/M28). Runs after the previous move has finished.</div>`;
+    }
+    if (n.type === 'pwm') {
+      html += field('Duty', num('value', n.value, v => { n.value = Math.max(0, Math.min(255, Math.round(v))); }));
+      html += `<div class="note" style="margin-bottom:6px">PWM output duty cycle, 0–255 (128 = 50 %), e.g. laser power. Sent as M21.</div>`;
+    }
+    if (n.type === 'gripper') {
+      binds.action = v => { n.action = v; };
+      html += field('Action', `<select data-k="action">${[['set', 'Move to position'], ['zero', 'Calibrate (set zero)'], ['release', 'Release (servo off)']].map(([v, t]) => `<option value="${v}" ${n.action === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
+      if (n.action === 'set') {
+        html += field('Open %', num('pos', n.pos, v => { n.pos = Math.max(0, Math.min(100, v)); }, 5));
+        html += field('Speed', num('gspeed', n.speed, v => { n.speed = Math.max(1, Math.min(1500, v)); }, 50));
+      }
+      html += `<div class="note" style="margin-bottom:6px">Gripper: 0 = closed, 100 = fully open, speed up to 1500 (M25). Add a Wait after it if the next move must wait for the gripper.</div>`;
     }
     if (n.type === 'wait') html += field('Time ms', num('ms', n.ms, v => { n.ms = Math.max(0, v); }, 100));
     if (n.type === 'loop') html += field('Count', num('count', n.count, v => { n.count = Math.max(1, v | 0); }));
@@ -419,6 +434,11 @@ async function exec(n) {
     case 'loop': for (let i = 0; i < n.count; i++) for (const c of n.children) await exec(c); break;
     case 'wait': await waitAbortable(n.ms); break;
     case 'poweron': if (on) { await robot.powerOn(); await sleep(300); } break;
+    case 'pwm': if (on) { await robot.setPWM(n.value); await sleep(100); } else log(`(sim) ${nodeLabel(n)}`); break;
+    case 'gripper':
+      if (on) { await (n.action === 'zero' ? robot.gripperZero() : n.action === 'release' ? robot.gripperRelease() : robot.gripper(n.pos, n.speed)); await sleep(100); }
+      else log(`(sim) ${nodeLabel(n)}`);
+      break;
     case 'do': if (on) { await robot.setDO(n.out, n.on); await sleep(100); } else log(`(sim) ${nodeLabel(n)}`); break;
     case 'release': if (on) { await robot.release(); await sleep(300); } break;
     case 'home':
@@ -481,7 +501,7 @@ function addWaypoint(capture) {
 }
 
 function addNode(type) {
-  const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] }, do: { out: 'gpio', on: true },
+  const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] }, do: { out: 'gpio', on: true }, pwm: { value: 128 }, gripper: { action: 'set', pos: 100, speed: 1000 },
     svg: { file: '', strokes: [], w: 0, h: 0, scale: 1, anchor: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, approach: 20, speed: 50, tol: 0.05 } };
   const n = { id: uid(), type, ...structuredClone(defaults[type] || {}) };
   if (type === 'movej' || type === 'movel') n.wp = wpById(sel)?.id || prog.waypoints.at(-1)?.id || addWaypoint(true).id;

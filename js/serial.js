@@ -103,6 +103,12 @@ export class Robot {
   async getCoords() { return m(await this.nums('M114', 'COORDS')); }
   // digital outputs (pymycobot): 'gpio' = the GPIO/suction pump output (M22 on / M23 off), 'fan' = fan output (M27 / M28)
   setDO(out, on) { return this.write({ gpio: on ? 'M22' : 'M23', fan: on ? 'M27' : 'M28' }[out]); }
+  // PWM output, duty 0–255 (128 = 50 %), e.g. laser power. Written exactly like pymycobot: "M21p128"
+  setPWM(v) { return this.write('M21p' + Math.round(v)); }
+  // gripper (pymycobot syntax): position 0 = closed … 100 = open, speed 0–1500; zero = calibrate, release = servo off
+  gripper(pos, speed) { return this.write(`M25A${Math.round(pos)}F${Math.round(speed)}`); }
+  gripperZero() { return this.write('M24'); }
+  gripperRelease() { return this.write('M26'); }
   // M16: S0 = constant speed (moves blend, used when streaming), S2 = accel/decel per move (default)
   speedMode(s) { return this.write('M16 S' + s); }
   // number of moves waiting in the firmware queue (pymycobot: reply contains "QUEUE SIZE[n]")
