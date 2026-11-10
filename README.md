@@ -1,6 +1,6 @@
 # Jerry
 
-Jerry, a simple online/offline programming environment for the Elephant Robotics ultraArm P340, used during a workshop at Hong Kong Design Institute. This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware.
+Jerry, a simple online/offline programming environment for the Elephant Robotics ultraArm P340, used during a workshop at Hong Kong Design Institute. This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware, loading their own files easily from a shared library.
 
 ## Features
 
@@ -11,7 +11,7 @@ Jerry, a simple online/offline programming environment for the Elephant Robotics
 - SVG plotting: load an SVG, place it with an anchor pose, set scale, approach height and speed
 - Run on the virtual robot for preview, or on the real arm via Web Serial
 - Path preview of the TCP trajectory
-- Programs saved to a flat-file db, reloaded via a URL GUID, with versioning
+- Programs saved to a flat-file db, reloaded via a URL GUID, with versioning, to allow easy save/load from different machines (personal laptops for offline programming -> save -> on machine that is connected to real hardware load their own file -> run)
 
 ![Jerry](docs/screenshot.webp)
 
