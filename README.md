@@ -1,6 +1,6 @@
 # Jerry
 
-Jerry, a simple programming environment for the Elephant Robotics ultraArm P340, used during a workshop at Hong Kong Design Institute. This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware.
+Jerry, a simple online/offline programming environment for the Elephant Robotics ultraArm P340, used during a workshop at Hong Kong Design Institute. This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware.
 
 ## Features
 
