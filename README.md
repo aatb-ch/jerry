@@ -19,6 +19,28 @@ Jerry, a simple online/offline programming environment for the Elephant Robotics
 ![Shared library](docs/library.webp)
 *Saved scenes show up in a shared library to easily load from a different machine with actual hardware, allowing easy prototyping offline, save and load for online playback.*
 
+## Program nodes
+
+A program runs its nodes from top to bottom. Each node waits for the previous one to finish. **Run** runs the whole program (forever if *loop program* is checked); **Run line** runs only the selected node.
+
+| Node | What it does |
+|---|---|
+| **MoveJ** | Moves to a waypoint by turning all joints together. The fastest way there, but the TCP path is curved. |
+| **MoveL** | Moves to a waypoint in a straight line. Refused if the line leaves the workspace: add a waypoint in between or use MoveJ. |
+| **Wait** | Pauses for a set time in ms. |
+| **Loop** | Runs the nodes inside it a set number of times. |
+| **Function** | Defines a named subprogram. Its nodes are skipped where they stand and only run when called. |
+| **Call** | Runs a function at this point. Define a procedure once and call it as often as needed. |
+| **Power on** | Locks the servos so the arm holds its position. |
+| **Home** | Sends the arm to its home position (all joints at 0). |
+| **Release** | Releases the servos: the arm can be moved by hand. |
+| **SVG plot** | Draws an SVG: for each stroke, moves above its start, lowers by the approach height, follows the stroke, then lifts. Optionally calls a function before every stroke (e.g. dip a brush in ink). |
+| **Set DO** | Switches a digital output on or off: GPIO (suction pump) or fan. |
+| **PWM** | Sets the PWM output, 0–255 (e.g. laser power). |
+| **Gripper** | Moves the gripper to a position (0 = closed, 100 = open), calibrates it, or releases it. |
+
+Add nodes with the blue buttons; they go after the selected node, or inside it if it is a loop or function. **→ in** / **← out** move a node into the loop or function above, or back out.
+
 ## Run
 
 Deploy on a LAMP server with HTTPS to have a simple personal virtual programming environment that can directly control the ultraArm P340 with Web Serial.
