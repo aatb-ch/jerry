@@ -528,15 +528,18 @@ async function exec(n) {
             await callFn(fn, 'plot');
             runId = n.id; renderTree();
           }
-          const J = jump(t, i);
+          // Jumps go straight (G0) when the line from where the arm is stays in the workspace, else by MoveJ (M11):
+          // after an M11 the firmware may plan the next G0 from a stale position, so avoid mixing them mid-plot.
+          let J = jump(t, i), from = T[i - 1]?.p;
+          if (J) { from = fk(cur); try { checkLine(from, t.p); J = false; } catch {} }
           await setMode(n.blend && !(t.start || t.end || T[i - 1]?.start) ? 0 : 2); // approach, pen down, pen up: always ramped
           if (on) {
-            if (!J) await sendL(T[i - 1].p, t.p, n.speed); else await robot.movej(t.j, n.speed);
+            if (!J) await sendL(from, t.p, n.speed); else await robot.movej(t.j, n.speed);
             await sleep(20); // pymycobot's pace: don't overrun the board's serial buffer
             if (++sent % 20 === 0) await waitQueue();
           }
           J ? await animJ(t.j, n.speed) : await animL(t.p, n.speed, 1);
-          if (on && (J || t.end)) await robot.waitIdle(() => abort, 120000); // Stop takes effect at the end of a stroke
+          if (on && (jump(t, i) || t.end)) await robot.waitIdle(() => abort, 120000); // Stop takes effect at the end of a stroke
         }
       } finally { if (on && robot.open) await robot.speedMode(2).catch(() => {}); }
       if (on) setCur(await syncFromRobot().catch(() => cur));
