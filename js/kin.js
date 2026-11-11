@@ -11,6 +11,8 @@ export const K = {
   // joint limits from the P340 manual: J1 -150..170, J2 -20..90, J3 -5..75 (pymycobot's docstring says J3 110).
   // J1 is mirrored at the wire (serial.js), so in the sim's frame it is -170..150.
   lim: [[-170, 150], [-20, 90], [-5, 75]],
+  // elbow fold: the max J3 depends on J2 (measured on the arm: J3 stops at 51° with J2 = 0), so J3 − J2 ≤ 51
+  fold: 51,
   // Cartesian limits the firmware checks (pymycobot set_coords): x, y, z in mm, robot frame
   box: [[-360, 365.55], [-365.55, 365.55], [-140, 130]],
 };
@@ -18,7 +20,7 @@ export const K = {
 const R = Math.PI / 180;
 
 const within = (v, l) => v.every((x, i) => x >= l[i][0] - 1e-6 && x <= l[i][1] + 1e-6);
-export const inLimits = j => within(j, K.lim) && within(flange(j), K.box);
+export const inLimits = j => within(j, K.lim) && j[2] - j[1] <= K.fold + 1e-6 && within(flange(j), K.box);
 
 // Tool: TCP offset from the flange, in the flange frame (x forward, y left, z up; it turns with J1, stays level).
 // [0, 0, 0] = TCP at the flange. The arm itself only knows flange coordinates (what M114 / G0 use).
@@ -50,6 +52,7 @@ export function whyNot(p) {
   if (!j) return 'out of reach';
   const f = flange(j), deg = v => v.toFixed(1);
   for (let i = 0; i < 3; i++) if (j[i] < K.lim[i][0] - 1e-6 || j[i] > K.lim[i][1] + 1e-6) return `J${i + 1} ${deg(j[i])}° (limit ${K.lim[i][0]}…${K.lim[i][1]}°)`;
+  if (j[2] - j[1] > K.fold + 1e-6) return `elbow folded too far: J3 ${deg(j[2])}° with J2 ${deg(j[1])}° (J3 may be at most J2 + ${K.fold}°)`;
   for (let i = 0; i < 3; i++) if (f[i] < K.box[i][0] - 1e-6 || f[i] > K.box[i][1] + 1e-6) return `${'XYZ'[i]} ${deg(f[i])} mm (limit ${K.box[i][0]}…${K.box[i][1]})`;
   return '';
 }
