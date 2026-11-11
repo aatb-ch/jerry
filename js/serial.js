@@ -10,6 +10,8 @@ const mj = ([a, b, c]) => MIRROR ? [-a, b, c] : [a, b, c];  // joints
 export class Robot {
   port = null; writer = null; reader = null; buf = ''; waiters = [];
   onLog = () => {};
+  onLimit = () => {}; // the arm refused a move ("limit reached"): (reply line, last motion commands sent)
+  sent = [];
 
   ready = false; // true once the board has booted: nothing is sent before that
   get open() { return this.ready; }
@@ -52,6 +54,7 @@ export class Robot {
           this.buf = this.buf.slice(i + 1);
           if (!line) continue;
           this.onLog('< ' + line);
+          if (/limit/i.test(line)) this.onLimit(line, [...this.sent]);
           this.waiters = this.waiters.filter(w => !(w.re.test(line) && (w.resolve(line), true)));
         }
       }
@@ -66,6 +69,7 @@ export class Robot {
     if (!this.port) throw new Error('not connected');
     if (!this.enabled && !/^(M9|M12|M114|M120)$/.test(cmd)) throw new Error('sending to robot is off');
     this.onLog('> ' + cmd);
+    if (!/^M(9|12|114|120)$/.test(cmd)) this.sent = [...this.sent.slice(-2), cmd];
     let t;
     return Promise.race([
       this.writer.write(new TextEncoder().encode(cmd + '\r')),

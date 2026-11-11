@@ -709,6 +709,12 @@ function log(msg, err) {
   while (L.childElementCount > 300) L.firstChild.remove();
   L.scrollTop = L.scrollHeight;
 }
+// The firmware refuses targets it considers out of range and carries on with the next one: stop the run instead,
+// and show what was sent, so the refused point can be found.
+robot.onLimit = (line, cmds) => {
+  log(`arm refused a move (${line}). Last commands: ${cmds.join(' | ')}`, true);
+  if (running) abort = true;
+};
 robot.onLog = m => { if (!/^[<>] M(9|12|114)\b|^< (DATA: )?(ANGLES|COORDS)|^< INFO: ABSOLUTE MODE/.test(m)) log(m); }; // hide poll chatter
 
 // ---------------- wiring ----------------
