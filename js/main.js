@@ -607,7 +607,8 @@ function op(kind) {
 }
 
 // ---------------- save / load ----------------
-const serialize = () => JSON.stringify(prog, (k, v) => (k === 'robotPos' || k === 'bad') ? undefined : v);
+// the run log (last 300 lines) is saved along, for remote debugging; it is not loaded back
+const serialize = () => JSON.stringify({ ...prog, log: $('log').innerText.split('\n') }, (k, v) => (k === 'robotPos' || k === 'bad') ? undefined : v);
 
 // first save creates a guid; later saves keep it and add a new version (server never overwrites)
 let progId = null;
@@ -659,7 +660,7 @@ $('loadList').addEventListener('click', e => {
 $('loadFilter').addEventListener('input', renderLoad);
 $('loadClose').onclick = () => $('loadDlg').close();
 
-function setProgram(p) { prog = p; sel = null; $('loopProg').checked = false; updateBase(); refresh(); }
+function setProgram(p) { delete p.log; prog = p; sel = null; $('loopProg').checked = false; updateBase(); refresh(); }
 
 // ---------------- serial UI ----------------
 async function refreshPorts() {
