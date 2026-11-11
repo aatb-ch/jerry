@@ -234,11 +234,13 @@ function renderProps() {
       html += trip('Anchor °', ['rx', 'ry', 'rz'].map(k => num('a' + k, a[k], v => { a[k] = v; })));
       html += field('Approach', num('approach', n.approach, v => { n.approach = v; }));
       html += field('Speed', num('speed', n.speed, v => { n.speed = Math.max(1, Math.min(200, v)); }));
+      binds.blend = v => { n.blend = v === '1'; };
+      html += field('Blend', `<select data-k="blend"><option value="0" ${n.blend ? '' : 'selected'}>off (ramp every move)</option><option value="1" ${n.blend ? 'selected' : ''}>on (constant speed)</option></select>`);
       html += field('Each stroke', fnSelect('call', n.call || '', v => { n.call = v; }));
       html += field('Curve tol.', num('tol', n.tol ?? 0.2, v => { n.tol = Math.max(0.005, v); }, 0.01));
       const T = plotTargets(n), segs = T.length - 3 * n.strokes.length;
       html += `<div class="note" style="margin-bottom:6px">Curve tol. = how far (mm) the straight segments may stray from the true curve. Smaller = smoother curves, more moves (now ${segs} segments, ${T.length} moves).</div>`;
-      html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes. Each stroke: a function called before every stroke (e.g. dip the brush), then a MoveJ to the stroke's approach point.</div>`;
+      html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes. Each stroke: a function called before every stroke (e.g. dip the brush), then a MoveJ to the stroke's approach point. Blend: on = curves are drawn in one smooth motion, but each stroke starts without a ramp and the arm may lose steps; off = every segment speeds up and slows down (reliable, slower on curves).</div>`;
       html += btns([['Load SVG…', 'svgload'], ['Anchor at TCP', 'atcp']]);
       acts.svgload = () => pickFile('.svg,image/svg+xml', async f => { Object.assign(n, parseSvg(await f.text()), { file: f.name }); });
       acts.atcp = () => { [a.x, a.y, a.z] = round(toBase(fk(cur))); };
@@ -511,28 +513,30 @@ async function exec(n) {
       if (n.call && !fn) throw new Error('plot: the function to call before each stroke is missing');
       const jump = (t, i) => i === 0 || t.start && fn; // reached by a MoveJ (first point, or after the per-stroke function)
       for (let i = 1; i < T.length; i++) if (!jump(T[i], i)) checkLine(T[i - 1].p, T[i].p); // the rest are straight
-      // Joint move to the first approach point, then linear moves. On the arm each stroke is streamed in constant
-      // speed mode (moves blend, no stop at every point, like pymycobot's G-code player); we wait for the arm only
-      // after each pen lift, so Stop takes effect at the end of the current stroke.
-      if (on) await robot.speedMode(0);
+      // Joint move to the first approach point, then linear moves, all in accel/decel mode (every move ramps up and
+      // down: slower on dense curves, but no lost steps). With "Blend" on, the pen-down part of each stroke is streamed
+      // in constant speed mode (moves blend, like pymycobot's G-code player); its first move then starts at full speed
+      // with no ramp, which can make the steppers lose steps. The mode only changes while the arm is idle.
+      let mode = null;
+      const setMode = async s => { if (on && s !== mode) { await robot.waitIdle(() => abort, 120000); await robot.speedMode(s); mode = s; } };
       try {
         let sent = 0;
         for (const [i, t] of T.entries()) {
           if (abort) throw STOP;
           if (t.start && fn) {
-            if (on) await robot.speedMode(2);
+            await setMode(2);
             await callFn(fn, 'plot');
-            if (on) await robot.speedMode(0);
             runId = n.id; renderTree();
           }
           const J = jump(t, i);
+          await setMode(n.blend && !(t.start || t.end || T[i - 1]?.start) ? 0 : 2); // approach, pen down, pen up: always ramped
           if (on) {
             if (!J) await sendL(T[i - 1].p, t.p, n.speed); else await robot.movej(t.j, n.speed);
             await sleep(20); // pymycobot's pace: don't overrun the board's serial buffer
             if (++sent % 20 === 0) await waitQueue();
           }
           J ? await animJ(t.j, n.speed) : await animL(t.p, n.speed, 1);
-          if (on && (J || t.end)) await robot.waitIdle(() => abort, 120000);
+          if (on && (J || t.end)) await robot.waitIdle(() => abort, 120000); // Stop takes effect at the end of a stroke
         }
       } finally { if (on && robot.open) await robot.speedMode(2).catch(() => {}); }
       if (on) setCur(await syncFromRobot().catch(() => cur));
