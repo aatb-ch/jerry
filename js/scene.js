@@ -100,6 +100,9 @@ scene.add(arm, ghost);
 export const baseFrame = new THREE.Group();
 baseFrame.add(new THREE.AxesHelper(90));
 baseFrame.add(label('Base', 'base'));
+const baseHandle = new THREE.Mesh(new THREE.SphereGeometry(6, 16, 12), new THREE.MeshStandardMaterial({ color: 0xffd23f })); // click to select / drag the base
+baseHandle.userData.id = 'base';
+baseFrame.add(baseHandle);
 scene.add(baseFrame);
 
 function label(text, cls = '') {
@@ -150,8 +153,8 @@ export function onPick(cb) {
   renderer.domElement.addEventListener('pointerup', e => {
     if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4 || gizmo.dragging) return;
     ray.setFromCamera(new THREE.Vector2(e.clientX / innerWidth * 2 - 1, -e.clientY / innerHeight * 2 + 1), camera);
-    const hit = ray.intersectObjects([...wpGroup.children, arm])[0];
-    if (hit) cb(hit.object.userData.id ?? null); // waypoint id, or null for the arm (→ gizmo back on TCP)
+    const hit = ray.intersectObjects([...wpGroup.children, baseHandle, arm])[0];
+    if (hit) cb(hit.object.userData.id ?? null); // waypoint id, 'base', or null for the arm (→ gizmo back on TCP)
   });
 }
 

@@ -121,7 +121,7 @@ function renderScene() {
   // gizmo: on the selected waypoint if any, otherwise on the TCP
   const sw = wpById(sel);
   if (sw && !gizmo.dragging) wpTarget.position.fromArray(sw.robotPos);
-  gizmo.attach(sw ? wpTarget : target);
+  gizmo.attach(sw ? wpTarget : sel === 'base' ? baseFrame : target);
 }
 
 // TCP trace of the program: MoveJ sampled through joint space (curved), MoveL straight, Home → zero pose.
@@ -166,7 +166,7 @@ function renderProps() {
 
   if (sel === 'base') {
     const b = prog.base, s = k => v => { b[k] = v; updateBase(); };
-    html += `<div class="note" style="margin-bottom:8px">Base frame pose relative to the robot. Waypoint coordinates are expressed in this frame, so moving the base moves all waypoints.</div>`;
+    html += `<div class="note" style="margin-bottom:8px">Base frame pose relative to the robot. Waypoint coordinates are expressed in this frame, so moving the base moves all waypoints. Drag the gizmo to move it.</div>`;
     html += trip('Pos mm', ['x', 'y', 'z'].map(k => num(k, b[k], s(k))));
     html += trip('Rot °', ['rx', 'ry', 'rz'].map(k => num(k, b[k], s(k))));
     html += btns([['Set origin to TCP', 'tcp'], ['Reset', 'reset']]);
@@ -329,6 +329,12 @@ function streamTarget(force) {
   sendJog('l');
 }
 gizmo.addEventListener('objectChange', () => {
+  if (gizmo.object === baseFrame) {         // dragging the base: waypoints move with it
+    const b = prog.base;
+    [b.x, b.y, b.z] = round(baseFrame.position.toArray());
+    updateBase();
+    return renderScene();
+  }
   if (gizmo.object === wpTarget) {          // dragging a waypoint: edit it (sim/robot untouched)
     const w = wpById(sel), j = ik(wpTarget.position.toArray());
     if (!j) return wpTarget.position.fromArray(w.robotPos);
@@ -339,7 +345,7 @@ gizmo.addEventListener('objectChange', () => {
   if (j) { setCur(j); streamTarget(); } else target.position.fromArray(fk(cur));
 });
 gizmo.addEventListener('mouseUp', () => {
-  if (gizmo.object === wpTarget) return refresh();
+  if (gizmo.object === wpTarget || gizmo.object === baseFrame) return refresh();
   target.position.fromArray(fk(cur)); streamTarget(true);
 });
 
