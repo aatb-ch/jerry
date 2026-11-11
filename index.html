@@ -8,7 +8,11 @@
 <script type="importmap">
 { "imports": {
   "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "./js/kin.js": "./js/kin.js?v=__V__",
+  "./js/scene.js": "./js/scene.js?v=__V__",
+  "./js/serial.js": "./js/serial.js?v=__V__",
+  "./js/svg.js": "./js/svg.js?v=__V__"
 } }
 </script>
 <style>
@@ -182,6 +186,7 @@
 
 <div id="credit"><a href="https://github.com/aatb-ch/jerry" target="_blank" rel="noopener">Jerry</a> by <a href="https://aatb.ch" target="_blank" rel="noopener">AATB</a></div>
 
-<script type="module" src="js/main.js"></script>
+<!-- __V__ is replaced by deploy.sh with a fresh version, so a plain reload fetches new code -->
+<script type="module" src="js/main.js?v=__V__"></script>
 </body>
 </html>
