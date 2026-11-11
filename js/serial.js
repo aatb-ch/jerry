@@ -101,8 +101,9 @@ export class Robot {
   async home() { await this.query('G28', /ok/i, 120000); } // pymycobot waits for "ok" with no timeout
   async getAngles() { return mj(await this.nums('M12', 'ANGLES')); }
   async getCoords() { return m(await this.nums('M114', 'COORDS')); }
-  // digital outputs (pymycobot): 'gpio' = the GPIO/suction pump output (M22 on / M23 off), 'fan' = fan output (M27 / M28)
-  setDO(out, on) { return this.write({ gpio: on ? 'M22' : 'M23', fan: on ? 'M27' : 'M28' }[out]); }
+  // digital outputs: 'gpio' = the GPIO/suction pump output, 'fan' = fan output (M27 on / M28 off).
+  // Pump verified on the arm: M23 turns it on, M22 off (pymycobot's docstring has it the other way round).
+  setDO(out, on) { return this.write({ gpio: on ? 'M23' : 'M22', fan: on ? 'M27' : 'M28' }[out]); }
   // PWM output, duty 0–255 (128 = 50 %), e.g. laser power. Written exactly like pymycobot: "M21p128"
   setPWM(v) { return this.write('M21p' + Math.round(v)); }
   // gripper (pymycobot syntax): position 0 = closed … 100 = open, speed 0–1500; zero = calibrate, release = servo off
