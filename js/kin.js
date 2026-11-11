@@ -42,7 +42,20 @@ export function addTool([x, y, z], j1) {
 export const fk = j => addTool(flange(j), j[0]);
 
 // TCP position → [j1,j2,j3], or null if unreachable / out of limits
-export function ik([x, y, z]) {
+export const ik = p => { const j = solve(p); return j && inLimits(j) ? j : null; };
+
+// why a TCP position is refused, e.g. "J3 77.3° (limit −5…75°)"; '' if it is fine
+export function whyNot(p) {
+  const j = solve(p);
+  if (!j) return 'out of reach';
+  const f = flange(j), deg = v => v.toFixed(1);
+  for (let i = 0; i < 3; i++) if (j[i] < K.lim[i][0] - 1e-6 || j[i] > K.lim[i][1] + 1e-6) return `J${i + 1} ${deg(j[i])}° (limit ${K.lim[i][0]}…${K.lim[i][1]}°)`;
+  for (let i = 0; i < 3; i++) if (f[i] < K.box[i][0] - 1e-6 || f[i] > K.box[i][1] + 1e-6) return `${'XYZ'[i]} ${deg(f[i])} mm (limit ${K.box[i][0]}…${K.box[i][1]})`;
+  return '';
+}
+
+// inverse kinematics without limit checks (null only if geometrically unreachable)
+function solve([x, y, z]) {
   const rt2 = x * x + y * y - tool[1] ** 2;  // TCP distance from the J1 axis, along the flange's forward direction
   if (rt2 < 0) return null;
   const rt = Math.sqrt(rt2);
@@ -53,6 +66,5 @@ export function ik([x, y, z]) {
   if (!(Math.abs(c) <= 1)) return null;
   const a = Math.atan2(h, r) + Math.acos(c);                       // upper arm angle from horizontal (elbow up)
   const b = Math.atan2(h - K.L1 * Math.sin(a), r - K.L1 * Math.cos(a)); // forearm angle from horizontal
-  const j = [j1, 90 - a / R, -b / R];
-  return inLimits(j) ? j : null;
+  return [j1, 90 - a / R, -b / R];
 }

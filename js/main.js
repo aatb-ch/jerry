@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { fk, ik, flange, addTool, setTool, tool } from './kin.js';
+import { fk, ik, whyNot, flange, addTool, setTool, tool } from './kin.js';
 import { Robot } from './serial.js';
 import { parseSvg, simplify } from './svg.js';
 import { arm, ghost, baseFrame, target, wpTarget, gizmo, setWaypoints, setPath, onPick } from './scene.js';
@@ -384,6 +384,14 @@ function animJ(to, speed) {
   const from = [...cur], d = Math.max(...to.map((v, i) => Math.abs(v - from[i])));
   return animate(Math.max(150, d / speed * 1000), t => setCur(from.map((v, i) => v + (to[i] - v) * t)));
 }
+// A straight line between two reachable points can still leave the workspace (e.g. it passes closer to the base,
+// where J3 would exceed its limit): check the whole line first, so nothing is sent to the arm for a move it can't do.
+function checkLine(from, to) {
+  for (let s = 0; s <= 100; s++) {
+    const p = from.map((v, i) => v + (to[i] - v) * s / 100), why = whyNot(p);
+    if (why) throw new Error(`straight line leaves the workspace ${Math.round(s)}% along: ${why} – use MoveJ, or add a waypoint in between`);
+  }
+}
 function animL(to, speed, min = 150) {
   const from = fk(cur), d = Math.hypot(...to.map((v, i) => v - from[i]));
   return animate(Math.max(min, d / speed * 1000), t => {
@@ -449,6 +457,7 @@ async function exec(n) {
       const w = wpById(n.wp);
       if (!w) throw new Error('move has no waypoint');
       if (w.bad) throw new Error(`waypoint ${w.name} unreachable`);
+      if (n.type === 'movel') checkLine(fk(cur), w.robotPos);
       if (on) n.type === 'movej' ? await robot.movej(w.joints, n.speed) : await sendL(fk(cur), w.robotPos, n.speed);
       n.type === 'movej' ? await animJ(w.joints, n.speed) : await animL(w.robotPos, n.speed);
       if (on) { await robot.waitIdle(() => abort); setCur(await syncFromRobot().catch(() => cur)); }
@@ -458,6 +467,7 @@ async function exec(n) {
       const T = plotTargets(n);
       if (!T.length) throw new Error('plot has no SVG loaded');
       if (T.some(t => !t.j)) throw new Error('drawing leaves the workspace');
+      for (let i = 1; i < T.length; i++) checkLine(T[i - 1].p, T[i].p); // T[0] is reached by a MoveJ, the rest are straight
       // Joint move to the first approach point, then linear moves. On the arm each stroke is streamed in constant
       // speed mode (moves blend, no stop at every point, like pymycobot's G-code player); we wait for the arm only
       // after each pen lift, so Stop takes effect at the end of the current stroke.
