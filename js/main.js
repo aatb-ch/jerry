@@ -59,7 +59,11 @@ function find(id, node = prog.root, parent = null) {
   for (const c of node.children || []) { const r = find(id, c, node); if (r) return r; }
   return null;
 }
-const ICON = { movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎', do: '⚡', pwm: '∿', gripper: '✊' };
+// Function = named subprogram (skipped where it stands), Call = run a function's children there
+const allFuncs = (n = prog.root, o = []) => { if (n.type === 'func') o.push(n); (n.children || []).forEach(c => allFuncs(c, o)); return o; };
+const funcById = id => id ? allFuncs().find(f => f.id === id) : null;
+const isBox = n => n?.type === 'loop' || n?.type === 'func'; // nodes that hold children
+const ICON = { func: 'ƒ', call: '↪', movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎', do: '⚡', pwm: '∿', gripper: '✊' };
 function nodeLabel(n) {
   const wp = n.wp && wpById(n.wp);
   switch (n.type) {
@@ -67,17 +71,20 @@ function nodeLabel(n) {
     case 'movel': return `MoveL → ${wp ? wp.name : '?'}  (${n.speed})`;
     case 'wait': return `Wait ${n.ms} ms`;
     case 'loop': return `Loop × ${n.count}`;
+    case 'func': return `Function ${n.name}`;
+    case 'call': return `Call ${funcById(n.fn)?.name ?? '?'}`;
     case 'poweron': return 'Power on';
     case 'home': return 'Home';
     case 'release': return 'Release servos';
     case 'do': return `Set ${n.out === 'fan' ? 'fan' : 'GPIO'} ${n.on ? 'ON' : 'OFF'}`;
     case 'pwm': return `PWM ${n.value} / 255`;
     case 'gripper': return n.action === 'zero' ? 'Gripper calibrate' : n.action === 'release' ? 'Gripper release' : `Gripper ${n.pos} % open  (${n.speed})`;
-    case 'svg': return `Plot ${n.file || '(no SVG)'}  (${n.strokes.length} strokes, ${n.speed})`;
+    case 'svg': return `Plot ${n.file || '(no SVG)'}  (${n.strokes.length} strokes, ${n.speed})${n.call ? `, ${funcById(n.call)?.name ?? '?'} per stroke` : ''}`;
   }
 }
 const nodeBad = n => (n.type === 'movej' || n.type === 'movel') && (!wpById(n.wp) || wpById(n.wp).bad)
-  || n.type === 'svg' && plotTargets(n).some(t => !t.j);
+  || n.type === 'call' && !funcById(n.fn)
+  || n.type === 'svg' && (n.call && !funcById(n.call) || plotTargets(n).some(t => !t.j));
 
 // SVG plot: strokes (mm, drawing frame) → robot-frame targets. Anchor = drawing centre, pose relative to the base frame;
 // pen goes down along the anchor's −Z from the approach height. Curves become straight segments that stay within
@@ -89,7 +96,7 @@ function plotTargets(n) {
   const out = [], add = (x, y, z, end) => { const p = new THREE.Vector3(x * n.scale, y * n.scale, z).applyMatrix4(A).toArray(); out.push({ p, j: ik(p), end }); };
   for (const s of n.strokes) {
     const pts = simplify(s, (n.tol ?? 0.2) / n.scale);
-    add(...pts[0], n.approach);
+    add(...pts[0], n.approach); out.at(-1).start = true; // pen up above the stroke start
     pts.forEach(q => add(...q, 0));
     add(...pts.at(-1), n.approach, true); // pen lifted: end of stroke
   }
@@ -134,14 +141,21 @@ function programPath() {
     else pts.push(fk(to));
     j = to;
   };
+  let depth = 0;
+  const call = f => { if (f && depth < 20) { depth++; f.children.forEach(walk); depth--; } };
   const walk = n => {
     if (n.type === 'program') n.children.forEach(walk);
+    if (n.type === 'call') call(funcById(n.fn));
     if (n.type === 'loop') for (let i = 0; i < Math.min(n.count, 2); i++) n.children.forEach(walk);
     if (n.type === 'home') goJ([0, 0, 0]);
     if (n.type === 'svg') {
       const T = plotTargets(n);
       if (!T.length || T.some(t => !t.j)) return;
-      goJ(T[0].j); T.slice(1).forEach(t => pts.push(t.p)); j = T.at(-1).j;
+      const f = funcById(n.call);
+      T.forEach((t, i) => {
+        if (t.start && f) call(f);
+        if (i === 0 || t.start && f) goJ(t.j); else { pts.push(t.p); j = t.j; }
+      });
     }
     const w = wpById(n.wp);
     if (!w || w.bad) return;
@@ -202,6 +216,15 @@ function renderProps() {
       html += btns([['New WP from TCP', 'nwp'], ['Run line', 'line']]);
       acts.nwp = () => { n.wp = addWaypoint(true).id; sel = n.id; };
     }
+    const fnSelect = (k, v, set) => { binds[k] = set; return `<select data-k="${k}"><option value="">—</option>${allFuncs().map(f => `<option value="${f.id}" ${f.id === v ? 'selected' : ''}>${esc(f.name)}</option>`).join('')}</select>`; };
+    if (n.type === 'func') {
+      html += field('Name', text('name', n.name, v => { n.name = v; }));
+      html += `<div class="note" style="margin-bottom:6px">A function is a subprogram: its nodes are skipped where they stand and run wherever a Call (or an SVG plot, before each stroke) uses it. Add nodes into it like into a loop.</div>`;
+    }
+    if (n.type === 'call') {
+      html += field('Function', fnSelect('fn', n.fn, v => { n.fn = v; }));
+      if (!funcById(n.fn)) html += `<div class="warn">Pick a function (add one with + Function).</div>`;
+    }
     if (n.type === 'svg') {
       const a = n.anchor;
       html += field('SVG', `<span class="note">${esc(n.file || 'none')}${n.file ? ` · ${fmt(n.w * n.scale)} × ${fmt(n.h * n.scale)} mm` : ''}</span>`);
@@ -211,10 +234,11 @@ function renderProps() {
       html += trip('Anchor °', ['rx', 'ry', 'rz'].map(k => num('a' + k, a[k], v => { a[k] = v; })));
       html += field('Approach', num('approach', n.approach, v => { n.approach = v; }));
       html += field('Speed', num('speed', n.speed, v => { n.speed = Math.max(1, Math.min(200, v)); }));
+      html += field('Each stroke', fnSelect('call', n.call || '', v => { n.call = v; }));
       html += field('Curve tol.', num('tol', n.tol ?? 0.2, v => { n.tol = Math.max(0.005, v); }, 0.01));
       const T = plotTargets(n), segs = T.length - 3 * n.strokes.length;
       html += `<div class="note" style="margin-bottom:6px">Curve tol. = how far (mm) the straight segments may stray from the true curve. Smaller = smoother curves, more moves (now ${segs} segments, ${T.length} moves).</div>`;
-      html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes.</div>`;
+      html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes. Each stroke: a function called before every stroke (e.g. dip the brush), then a MoveJ to the stroke's approach point.</div>`;
       html += btns([['Load SVG…', 'svgload'], ['Anchor at TCP', 'atcp']]);
       acts.svgload = () => pickFile('.svg,image/svg+xml', async f => { Object.assign(n, parseSvg(await f.text()), { file: f.name }); });
       acts.atcp = () => { [a.x, a.y, a.z] = round(toBase(fk(cur))); };
@@ -241,7 +265,7 @@ function renderProps() {
     if (n.type === 'wait') html += field('Time ms', num('ms', n.ms, v => { n.ms = Math.max(0, v); }, 100));
     if (n.type === 'loop') html += field('Count', num('count', n.count, v => { n.count = Math.max(1, v | 0); }));
     if (!html.includes('data-act="line"')) html += btns([['Run line', 'line']]);
-    acts.line = () => run(n);
+    acts.line = () => run(n.type === 'func' ? { type: 'program', children: n.children } : n);
   } else {
     html = `<div class="note">Select a node, waypoint, the base or the tool in the tree (or click a waypoint in 3D). Click the robot to drag the TCP.</div>`;
   }
@@ -439,6 +463,14 @@ async function waitQueue() {
   }
 }
 
+let callDepth = 0;
+async function callFn(f, what) {
+  if (!f) throw new Error(`${what}: function missing`);
+  if (callDepth >= 20) throw new Error(`function ${f.name} calls itself (more than 20 deep)`);
+  callDepth++;
+  try { for (const c of f.children) await exec(c); } finally { callDepth--; }
+}
+
 async function exec(n) {
   if (abort) throw STOP;
   if (n.id) { runId = n.id; renderTree(); }
@@ -446,6 +478,8 @@ async function exec(n) {
   switch (n.type) {
     case 'program': for (const c of n.children) await exec(c); break;
     case 'loop': for (let i = 0; i < n.count; i++) for (const c of n.children) await exec(c); break;
+    case 'func': break; // a definition: only runs when called
+    case 'call': await callFn(funcById(n.fn), 'call'); break;
     case 'wait': await waitAbortable(n.ms); break;
     case 'poweron': if (on) { await robot.powerOn(); await sleep(300); } break;
     case 'pwm': if (on) { await robot.setPWM(n.value); await sleep(100); } else log(`(sim) ${nodeLabel(n)}`); break;
@@ -473,7 +507,10 @@ async function exec(n) {
       const T = plotTargets(n);
       if (!T.length) throw new Error('plot has no SVG loaded');
       if (T.some(t => !t.j)) throw new Error('drawing leaves the workspace');
-      for (let i = 1; i < T.length; i++) checkLine(T[i - 1].p, T[i].p); // T[0] is reached by a MoveJ, the rest are straight
+      const fn = n.call ? funcById(n.call) : null;
+      if (n.call && !fn) throw new Error('plot: the function to call before each stroke is missing');
+      const jump = (t, i) => i === 0 || t.start && fn; // reached by a MoveJ (first point, or after the per-stroke function)
+      for (let i = 1; i < T.length; i++) if (!jump(T[i], i)) checkLine(T[i - 1].p, T[i].p); // the rest are straight
       // Joint move to the first approach point, then linear moves. On the arm each stroke is streamed in constant
       // speed mode (moves blend, no stop at every point, like pymycobot's G-code player); we wait for the arm only
       // after each pen lift, so Stop takes effect at the end of the current stroke.
@@ -482,13 +519,20 @@ async function exec(n) {
         let sent = 0;
         for (const [i, t] of T.entries()) {
           if (abort) throw STOP;
+          if (t.start && fn) {
+            if (on) await robot.speedMode(2);
+            await callFn(fn, 'plot');
+            if (on) await robot.speedMode(0);
+            runId = n.id; renderTree();
+          }
+          const J = jump(t, i);
           if (on) {
-            if (i) await sendL(T[i - 1].p, t.p, n.speed); else await robot.movej(t.j, n.speed);
+            if (!J) await sendL(T[i - 1].p, t.p, n.speed); else await robot.movej(t.j, n.speed);
             await sleep(20); // pymycobot's pace: don't overrun the board's serial buffer
             if (++sent % 20 === 0) await waitQueue();
           }
-          i ? await animL(t.p, n.speed, 1) : await animJ(t.j, n.speed);
-          if (on && (i === 0 || t.end)) await robot.waitIdle(() => abort, 120000);
+          J ? await animJ(t.j, n.speed) : await animL(t.p, n.speed, 1);
+          if (on && (J || t.end)) await robot.waitIdle(() => abort, 120000);
         }
       } finally { if (on && robot.open) await robot.speedMode(2).catch(() => {}); }
       if (on) setCur(await syncFromRobot().catch(() => cur));
@@ -499,7 +543,7 @@ async function exec(n) {
 
 async function run(node, repeat = () => false) {
   if (running) return;
-  running = true; abort = false; runLive = live(); renderButtons();
+  running = true; abort = false; callDepth = 0; runLive = live(); renderButtons();
   try { do { await exec(node); await sleep(50); } while (repeat() && !abort); log('done'); }
   catch (e) { log(e === STOP ? 'stopped' : 'error: ' + e.message, e !== STOP); }
   running = false; runId = null; refresh();
@@ -517,12 +561,15 @@ function addWaypoint(capture) {
 }
 
 function addNode(type) {
-  const defaults = { movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] }, do: { out: 'gpio', on: true }, pwm: { value: 128 }, gripper: { action: 'set', pos: 100, speed: 1000 },
+  const fs = allFuncs();
+  let name = 'F' + (fs.length + 1);
+  for (let i = fs.length + 1; fs.some(f => f.name === name); i++) name = 'F' + i;
+  const defaults = { func: { name, children: [] }, call: { fn: fs.at(-1)?.id || '' }, movej: { speed: 50 }, movel: { speed: 50 }, wait: { ms: 1000 }, loop: { count: 2, children: [] }, do: { out: 'gpio', on: true }, pwm: { value: 128 }, gripper: { action: 'set', pos: 100, speed: 1000 },
     svg: { file: '', strokes: [], w: 0, h: 0, scale: 1, anchor: { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0 }, approach: 20, speed: 50, tol: 0.05 } };
   const n = { id: uid(), type, ...structuredClone(defaults[type] || {}) };
   if (type === 'movej' || type === 'movel') n.wp = wpById(sel)?.id || prog.waypoints.at(-1)?.id || addWaypoint(true).id;
   const f = find(sel);
-  if (f && f.node.type === 'loop') f.node.children.push(n);
+  if (isBox(f?.node)) f.node.children.push(n);
   else if (f && f.parent) f.parent.children.splice(f.index + 1, 0, n);
   else prog.root.children.push(n);
   return n;
@@ -543,7 +590,7 @@ function op(kind) {
   const sib = f.parent.children, i = f.index;
   if (kind === 'up' && i > 0) [sib[i - 1], sib[i]] = [sib[i], sib[i - 1]];
   if (kind === 'down' && i < sib.length - 1) [sib[i + 1], sib[i]] = [sib[i], sib[i + 1]];
-  if (kind === 'in' && sib[i - 1]?.type === 'loop') sib[i - 1].children.push(...sib.splice(i, 1));
+  if (kind === 'in' && isBox(sib[i - 1])) sib[i - 1].children.push(...sib.splice(i, 1));
   if (kind === 'out' && f.parent !== prog.root) { const p = find(f.parent.id); sib.splice(i, 1); p.parent.children.splice(p.index + 1, 0, f.node); }
   if (kind === 'dup') {
     const reid = n => ({ ...n, id: uid(), ...(n.children ? { children: n.children.map(reid) } : {}) });

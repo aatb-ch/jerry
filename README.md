@@ -7,8 +7,8 @@ Jerry, a simple online/offline programming environment for the Elephant Robotics
 - Joint and Cartesian jogging, by buttons or by dragging the TCP gizmo
 - TCP and base coordinate systems; tool offset from the flange (default: TCP at the flange)
 - Waypoints: capture from the TCP, edit numerically or drag in 3D
-- Program tree: MoveJ, MoveL, wait, loops, power on, home, release, set digital output (GPIO / fan), PWM, gripper
-- SVG plotting: load an SVG, place it with an anchor pose, set scale, approach height and speed
+- Program tree: MoveJ, MoveL, wait, loops, functions (define a subprogram once, call it anywhere), power on, home, release, set digital output (GPIO / fan), PWM, gripper
+- SVG plotting: load an SVG, place it with an anchor pose, set scale, approach height and speed; optionally call a function before every stroke (e.g. dip a brush in ink)
 - Run on the virtual robot for preview, or on the real arm via Web Serial
 - Path preview of the TCP trajectory
 - Programs saved to a flat-file db, reloaded via a URL GUID, with versioning, to allow easy save/load from different machines (personal laptops for offline programming -> save -> on machine that is connected to real hardware load their own file -> run)
