@@ -19,20 +19,24 @@ export function parseSvg(text) {
     const strokes = [];
     for (const el of root.querySelectorAll('path,line,polyline,polygon,rect,circle,ellipse')) {
       if (el.closest('defs,clipPath,mask,symbol,marker')) continue;
-      const L = el.getTotalLength(), n = Math.max(1, Math.ceil(L / step)), ctm = el.getCTM();
-      let s = [], prev = null;
-      for (let i = 0; i <= n; i++) {
-        const q = el.getPointAtLength(L * i / n);
-        // a moveto inside a path shows up as a jump between consecutive samples → pen up
-        if (prev && Math.hypot(q.x - prev.x, q.y - prev.y) > 2 * L / n) { if (s.length > 1) strokes.push(s); s = []; }
-        const p = q.matrixTransform(ctm);
-        s.push([p.x, p.y]); prev = q;
+      const ctm = el.getCTM();
+      let s = [];
+      // Paths are sampled one segment at a time: getPointAtLength on a long path walks it from the start
+      // (a 2.5 m spiral took ~1 ms per call, minutes in all). Other shapes are short: sampled whole.
+      const parts = el.nodeName === 'path' ? segments(el.getAttribute('d') || '') : [el];
+      for (const part of parts) {
+        if (!part) { if (s.length > 1) strokes.push(s); s = []; continue; } // moveto: pen up
+        let g = part;
+        if (typeof part === 'string') { g = document.createElementNS(el.namespaceURI, 'path'); g.setAttribute('d', part); el.after(g); }
+        const L = g.getTotalLength(), n = Math.max(1, Math.ceil(L / step));
+        for (let i = s.length ? 1 : 0; i <= n; i++) { const p = g.getPointAtLength(L * i / n).matrixTransform(ctm); s.push([p.x, p.y]); }
+        if (g !== el) g.remove();
       }
       if (s.length > 1) strokes.push(s);
     }
     if (!strokes.length) throw new Error('no drawable shapes in SVG');
-    const all = strokes.flat(), xs = all.map(p => p[0]), ys = all.map(p => p[1]);
-    const [x0, x1, y0, y1] = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)];
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity; // a loop: Math.min(...pts) overflows the stack on long paths
+    for (const s of strokes) for (const [x, y] of s) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); }
     mmPerUnit ??= 80 / Math.max(x1 - x0, y1 - y0, 1e-9);
     const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2, r = v => Math.round(v * 100) / 100, r3 = v => Math.round(v * 1000) / 1000;
     return {
@@ -42,14 +46,56 @@ export function parseSvg(text) {
   } finally { host.remove(); }
 }
 
-// Ramer–Douglas–Peucker: drop points closer than tol to the line through their neighbours (straight runs → 1 move)
+// Path data → one standalone path string per segment ("M x y C …", absolute), null for a moveto (pen up).
+// S/T are expanded to C/Q, H/V become L, Z becomes a line back to the subpath start.
+function segments(d) {
+  const t = d.match(/[a-z]|[-+]?(?:\d*\.\d+|\d+\.?)(?:e[-+]?\d+)?/gi) || [];
+  const out = [];
+  let i = 0, cmd = '', x = 0, y = 0, sx = 0, sy = 0, qx = 0, qy = 0, last = '';
+  const num = () => +t[i++];
+  while (i < t.length) {
+    if (/[a-z]/i.test(t[i])) cmd = t[i++];
+    else if (/z/i.test(cmd)) break; // numbers after Z: malformed
+    const C = cmd.toUpperCase(), ox = cmd === C ? 0 : x, oy = cmd === C ? 0 : y, M = `M${x} ${y}`;
+    let seg, nx, ny, cx = null, cy = null; // (cx, cy) = last control point, for S/T reflection
+    if (C === 'M') { x = sx = num() + ox; y = sy = num() + oy; out.push(null); cmd = cmd === 'M' ? 'L' : 'l'; last = 'M'; continue; }
+    if (C === 'Z') { seg = `L${sx} ${sy}`; nx = sx; ny = sy; }
+    else if (C === 'L') { nx = num() + ox; ny = num() + oy; seg = `L${nx} ${ny}`; }
+    else if (C === 'H') { nx = num() + ox; ny = y; seg = `L${nx} ${ny}`; }
+    else if (C === 'V') { nx = x; ny = num() + oy; seg = `L${nx} ${ny}`; }
+    else if (C === 'C' || C === 'S') {
+      const [x1, y1] = C === 'C' ? [num() + ox, num() + oy] : /[CS]/.test(last) ? [2 * x - qx, 2 * y - qy] : [x, y];
+      const x2 = num() + ox, y2 = num() + oy; nx = num() + ox; ny = num() + oy;
+      seg = `C${x1} ${y1} ${x2} ${y2} ${nx} ${ny}`; cx = x2; cy = y2;
+    } else if (C === 'Q' || C === 'T') {
+      const [x1, y1] = C === 'Q' ? [num() + ox, num() + oy] : /[QT]/.test(last) ? [2 * x - qx, 2 * y - qy] : [x, y];
+      nx = num() + ox; ny = num() + oy; seg = `Q${x1} ${y1} ${nx} ${ny}`; cx = x1; cy = y1;
+    } else if (C === 'A') {
+      const a = [num(), num(), num(), num(), num()]; nx = num() + ox; ny = num() + oy; seg = `A${a.join(' ')} ${nx} ${ny}`;
+    } else break; // unknown command
+    if (Number.isNaN(nx + ny)) break;
+    out.push(M + seg);
+    if (cx !== null) { qx = cx; qy = cy; }
+    last = C; x = nx; y = ny;
+    if (C === 'Z') { cmd = ''; }
+  }
+  return out;
+}
+
+// Ramer–Douglas–Peucker: drop points closer than tol to the line through their neighbours (straight runs → 1 move).
+// Iterative, on index ranges: long paths (e.g. a spiral, 100k+ samples) would overflow the stack recursively.
 export function simplify(pts, tol) {
   if (pts.length < 3) return pts;
-  const [a, b] = [pts[0], pts.at(-1)], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
-  let iMax = 0, dMax = 0;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const p = pts[i], d = L ? Math.abs(dy * (p[0] - a[0]) - dx * (p[1] - a[1])) / L : Math.hypot(p[0] - a[0], p[1] - a[1]);
-    if (d > dMax) { dMax = d; iMax = i; }
+  const keep = new Uint8Array(pts.length), stack = [[0, pts.length - 1]];
+  keep[0] = keep[pts.length - 1] = 1;
+  while (stack.length) {
+    const [i0, i1] = stack.pop(), a = pts[i0], b = pts[i1], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+    let iMax = 0, dMax = 0;
+    for (let i = i0 + 1; i < i1; i++) {
+      const p = pts[i], d = L ? Math.abs(dy * (p[0] - a[0]) - dx * (p[1] - a[1])) / L : Math.hypot(p[0] - a[0], p[1] - a[1]);
+      if (d > dMax) { dMax = d; iMax = i; }
+    }
+    if (dMax > tol) { keep[iMax] = 1; stack.push([i0, iMax], [iMax, i1]); }
   }
-  return dMax <= tol ? [a, b] : [...simplify(pts.slice(0, iMax + 1), tol).slice(0, -1), ...simplify(pts.slice(iMax), tol)];
+  return pts.filter((_, i) => keep[i]);
 }
