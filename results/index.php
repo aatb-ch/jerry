@@ -60,20 +60,21 @@ async function play() {
 }
 play();
 
-// slow 3D tilt per layer (around the screen's x and y axes, max 10°), driven by 1D Perlin noise
-const TILT = 10, SPEED = 0.04; // max degrees, noise units per second (≈ one gentle sway every ~25 s, ≤ ~0.8°/s)
+// slow 3D motion per layer, driven by 1D Perlin noise: tilt around the screen's x and y axes, and a drift in depth
+const TILT = 30, DEPTH = 150, SPEED = 0.12; // max degrees, max px towards/away from the viewer (perspective 1500px: ≈ ±10 % size), noise units per second
 const grad = i => { const h = Math.sin(i * 127.1 + 311.7) * 43758.5453; return (h - Math.floor(h)) * 2 - 1; }; // gradient per integer
 const fade = t => t * t * t * (t * (t * 6 - 15) + 10);
 function perlin(x) { // ≈ −0.5…0.5
   const i = Math.floor(x), f = x - i;
   return grad(i) * f + (grad(i + 1) * (f - 1) - grad(i) * f) * fade(f);
 }
-const clamp = v => Math.max(-TILT, Math.min(TILT, v));
+const clamp = (v, m) => Math.max(-m, Math.min(m, v));
 (function tilt(ms) {
   const t = ms / 1000 * SPEED;
   layers.forEach((l, k) => {
-    const rx = clamp(perlin(t + 100 * k + 17.3) * 2 * TILT), ry = clamp(perlin(t + 100 * k + 53.9) * 2 * TILT);
-    l.style.transform = `perspective(1500px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+    const n = o => perlin(t + 100 * k + o) * 2; // ≈ −1…1, a different stretch of noise per layer and per channel
+    const rx = clamp(n(17.3) * TILT, TILT), ry = clamp(n(53.9) * TILT, TILT), z = clamp(n(91.1) * DEPTH, DEPTH);
+    l.style.transform = `perspective(1500px) translateZ(${z.toFixed(1)}px) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
   });
   requestAnimationFrame(tilt);
 })(0);
