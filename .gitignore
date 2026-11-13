@@ -5,3 +5,4 @@ db/*
 .env
 deploy.sh
 dev_server.py
+results/
