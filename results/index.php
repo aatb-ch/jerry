@@ -59,6 +59,10 @@ layers.forEach((l, i) => setTimeout(() => swap(l), i * 700));
 // new images dropped on the server show up within a minute
 setInterval(() => fetch('?list').then(r => r.json()).then(l => { imgs = l; }).catch(() => {}), 60000);
 
+// reload every 5 min to pick up a new version of this page; only when the server answers, so a network
+// hiccup never leaves the beamer on a browser error page (run the browser in kiosk mode to stay full screen)
+setInterval(() => fetch('?list', { cache: 'no-store' }).then(r => r.ok && location.reload()).catch(() => {}), 5 * 60000);
+
 // click / key: toggle full screen
 const fs = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen().catch(() => {});
 addEventListener('click', fs);
