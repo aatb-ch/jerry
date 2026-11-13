@@ -1,4 +1,4 @@
-# Jerry
+# 🐭 Jerry
 
 Jerry, a simple online/offline programming environment for the [Elephant Robotics](http://elephantrobotics.com/) ultraArm P340 and the [Dobot](https://www.dobot-robots.com/) Magician, used during a workshop at [Hong Kong Design Institute](https://hkdi.edu.hk/). This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware, loading their own files easily from a shared library.
 
