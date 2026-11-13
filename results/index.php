@@ -13,7 +13,7 @@ if (isset($_GET['list'])) { header('Content-Type: application/json'); exit(json_
 <style>
   html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; cursor: none; }
   /* two full-screen layers on top of each other, multiplied: white stays white, the drawings mix */
-  .layer { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center;
+  .layer { position: fixed; inset: 5%; width: 90%; height: 90%; /* 5 % margin all around */ object-fit: contain; object-position: center;
            mix-blend-mode: multiply; transition: opacity 1s; }
   .layer.out { opacity: 0; }
   #empty { position: fixed; inset: 0; display: grid; place-items: center; font: 16px system-ui, sans-serif; color: #999; }
