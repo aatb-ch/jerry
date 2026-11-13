@@ -12,7 +12,7 @@ if (isset($_GET['list'])) { header('Content-Type: application/json'); exit(json_
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐭</text></svg>">
 <style>
   html, body { margin: 0; height: 100%; background: #fff; overflow: hidden; cursor: none; }
-  /* three full-screen layers on top of each other, multiplied: white stays white, the drawings mix */
+  /* two full-screen layers on top of each other, multiplied: white stays white, the drawings mix */
   .layer { position: fixed; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center;
            mix-blend-mode: multiply; transition: opacity 1s; }
   .layer.out { opacity: 0; }
@@ -21,7 +21,6 @@ if (isset($_GET['list'])) { header('Content-Type: application/json'); exit(json_
 </style>
 </head>
 <body>
-<img class="layer out" alt="">
 <img class="layer out" alt="">
 <img class="layer out" alt="">
 <div id="empty" hidden>No images yet – drop them in results/img/</div>
