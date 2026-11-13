@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { fk, ik, whyNot, flange, addTool, setTool, tool } from './kin.js';
 import { Robot } from './serial.js';
-import { parseSvg, simplify } from './svg.js';
+import { parseSvg } from './svg.js';
+import { allFuncs as funcsIn, findFunc, plotTargets as targetsIn, programPath as pathIn } from './path.js';
 import { arm, ghost, baseFrame, target, wpTarget, gizmo, setWaypoints, setPath, onPick } from './scene.js';
 
 const $ = id => document.getElementById(id);
@@ -60,8 +61,10 @@ function find(id, node = prog.root, parent = null) {
   return null;
 }
 // Function = named subprogram (skipped where it stands), Call = run a function's children there
-const allFuncs = (n = prog.root, o = []) => { if (n.type === 'func') o.push(n); (n.children || []).forEach(c => allFuncs(c, o)); return o; };
-const funcById = id => id ? allFuncs().find(f => f.id === id) : null;
+const allFuncs = () => funcsIn(prog.root);
+const funcById = id => findFunc(prog.root, id);
+const plotTargets = n => targetsIn(n, M);
+const programPath = () => pathIn(prog, M);
 const isBox = n => n?.type === 'loop' || n?.type === 'func'; // nodes that hold children
 const ICON = { func: 'ƒ', call: '↪', movej: '⤳', movel: '→', wait: '⏱', loop: '↻', poweron: '⏻', home: '⌂', release: '⊘', svg: '✎', do: '⚡', pwm: '∿', gripper: '✊' };
 function nodeLabel(n) {
@@ -86,22 +89,6 @@ const nodeBad = n => (n.type === 'movej' || n.type === 'movel') && (!wpById(n.wp
   || n.type === 'call' && !funcById(n.fn)
   || n.type === 'svg' && (n.call && !funcById(n.call) || plotTargets(n).some(t => !t.j));
 
-// SVG plot: strokes (mm, drawing frame) → robot-frame targets. Anchor = drawing centre, pose relative to the base frame;
-// pen goes down along the anchor's −Z from the approach height. Curves become straight segments that stay within
-// n.tol mm of the true curve (Ramer–Douglas–Peucker at the drawn size): smaller = more, shorter segments, smoother curves.
-function plotTargets(n) {
-  const a = n.anchor;
-  const A = new THREE.Matrix4().compose(new THREE.Vector3(a.x, a.y, a.z),
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(a.rx * R, a.ry * R, a.rz * R, 'XYZ')), new THREE.Vector3(1, 1, 1)).premultiply(M);
-  const out = [], add = (x, y, z, end) => { const p = new THREE.Vector3(x * n.scale, y * n.scale, z).applyMatrix4(A).toArray(); out.push({ p, j: ik(p), end }); };
-  for (const s of n.strokes) {
-    const pts = simplify(s, (n.tol ?? 0.2) / n.scale);
-    add(...pts[0], n.approach); out.at(-1).start = true; // pen up above the stroke start
-    pts.forEach(q => add(...q, 0));
-    add(...pts.at(-1), n.approach, true); // pen lifted: end of stroke
-  }
-  return out;
-}
 
 // ---------------- rendering ----------------
 function renderTree() {
@@ -129,41 +116,6 @@ function renderScene() {
   const sw = wpById(sel);
   if (sw && !gizmo.dragging) wpTarget.position.fromArray(sw.robotPos);
   gizmo.attach(sw ? wpTarget : sel === 'base' ? baseFrame : target);
-}
-
-// TCP trace of the program: MoveJ sampled through joint space (curved), MoveL straight, Home → zero pose.
-// Starts at the first known pose; loops are unrolled (max 2 passes – enough to show the return leg).
-function programPath() {
-  const pts = [];
-  let j = null;
-  const goJ = to => {
-    if (j) for (let s = 1; s <= 24; s++) pts.push(fk(j.map((v, i) => v + (to[i] - v) * s / 24)));
-    else pts.push(fk(to));
-    j = to;
-  };
-  let depth = 0;
-  const call = f => { if (f && depth < 20) { depth++; f.children.forEach(walk); depth--; } };
-  const walk = n => {
-    if (n.type === 'program') n.children.forEach(walk);
-    if (n.type === 'call') call(funcById(n.fn));
-    if (n.type === 'loop') for (let i = 0; i < Math.min(n.count, 2); i++) n.children.forEach(walk);
-    if (n.type === 'home') goJ([0, 0, 0]);
-    if (n.type === 'svg') {
-      const T = plotTargets(n);
-      if (!T.length || T.some(t => !t.j)) return;
-      const f = funcById(n.call);
-      T.forEach((t, i) => {
-        if (t.start && f) call(f);
-        if (i === 0 || t.start && f) goJ(t.j); else { pts.push(t.p); j = t.j; }
-      });
-    }
-    const w = wpById(n.wp);
-    if (!w || w.bad) return;
-    if (n.type === 'movej') goJ(w.joints);
-    if (n.type === 'movel') { pts.push(w.robotPos); j = w.joints; }
-  };
-  walk(prog.root);
-  return pts;
 }
 
 // props panel: built from field descriptors; numeric inputs commit on change
