@@ -1,9 +1,10 @@
 import * as THREE from 'three';
-import { fk, ik, whyNot, flange, addTool, setTool, tool } from './kin.js';
+import { fk, ik, whyNot, flange, addTool, setTool, tool, K, ROBOTS, setRobot } from './kin.js';
 import { Robot } from './serial.js';
+import { Dobot } from './dobot.js';
 import { parseSvg } from './svg.js';
 import { allFuncs as funcsIn, findFunc, plotTargets as targetsIn, programPath as pathIn } from './path.js';
-import { arm, ghost, baseFrame, target, wpTarget, gizmo, setWaypoints, setPath, onPick } from './scene.js';
+import { arm, ghost, buildArm, baseFrame, target, wpTarget, gizmo, setWaypoints, setPath, onPick } from './scene.js';
 
 const $ = id => document.getElementById(id);
 const R = Math.PI / 180;
@@ -13,13 +14,16 @@ const fmt = v => (+v).toFixed(1);
 const STOP = new Error('stopped');
 
 // ---------------- state ----------------
-const robot = new Robot();
+// the arm driver for the program's robot: ultraArm (G-code) or Dobot Magician (binary protocol), same interface
+const DRIVERS = { ultraarm: Robot, magician: Dobot };
+let robot = new Robot();
 const live = () => robot.open && robot.enabled; // global gate: nothing is sent to the arm unless this is true
 let prog, sel = null, cur = [0, 0, 0], real = null, running = false, abort = false, runId = null, runLive = false;
 
 const newProgram = () => ({
   name: 'Untitled',
   author: '',
+  robot: prog?.robot || 'ultraarm', // a new program keeps the current robot
   base: { x: 200, y: 0, z: 0, rx: 0, ry: 0, rz: 0 },
   tool: { x: 0, y: 0, z: 0 }, // TCP offset from the flange (flange frame); 0 = TCP at the flange
   waypoints: [],
@@ -79,13 +83,14 @@ function nodeLabel(n) {
     case 'poweron': return 'Power on';
     case 'home': return 'Home';
     case 'release': return 'Release servos';
-    case 'do': return `Set ${n.out === 'fan' ? 'fan' : 'GPIO'} ${n.on ? 'ON' : 'OFF'}`;
-    case 'pwm': return `PWM ${n.value} / 255`;
+    case 'do': return `Set ${n.out === 'fan' ? 'fan' : K.out} ${n.on ? 'ON' : 'OFF'}`;
+    case 'pwm': return K.servo ? `PWM ${n.value} / 255` : `Laser ${n.value > 0 ? 'ON' : 'OFF'}`;
     case 'gripper': return n.action === 'zero' ? 'Gripper calibrate' : n.action === 'release' ? 'Gripper release' : `Gripper ${n.pos} % open  (${n.speed})`;
     case 'svg': return `Plot ${n.file || '(no SVG)'}  (${n.strokes.length} strokes, ${n.speed})${n.call ? `, ${funcById(n.call)?.name ?? '?'} per stroke` : ''}`;
   }
 }
-const nodeBad = n => (n.type === 'movej' || n.type === 'movel') && (!wpById(n.wp) || wpById(n.wp).bad)
+const unsupported = n => !K.servo && (n.type === 'poweron' || n.type === 'release') || !K.fan && n.type === 'do' && n.out === 'fan';
+const nodeBad = n => unsupported(n) || (n.type === 'movej' || n.type === 'movel') && (!wpById(n.wp) || wpById(n.wp).bad)
   || n.type === 'call' && !funcById(n.fn)
   || n.type === 'svg' && (n.call && !funcById(n.call) || plotTargets(n).some(t => !t.j));
 
@@ -187,35 +192,37 @@ function renderProps() {
       html += field('Approach', num('approach', n.approach, v => { n.approach = v; }));
       html += field('Speed', num('speed', n.speed, v => { n.speed = Math.max(1, Math.min(200, v)); }));
       binds.blend = v => { n.blend = v === '1'; };
-      html += field('Blend', `<select data-k="blend"><option value="0" ${n.blend ? '' : 'selected'}>off (ramp every move)</option><option value="1" ${n.blend ? 'selected' : ''}>on (constant speed)</option></select>`);
+      if (K.blend) html += field('Blend', `<select data-k="blend"><option value="0" ${n.blend ? '' : 'selected'}>off (ramp every move)</option><option value="1" ${n.blend ? 'selected' : ''}>on (constant speed)</option></select>`);
       html += field('Each stroke', fnSelect('call', n.call || '', v => { n.call = v; }));
       html += field('Curve tol.', num('tol', n.tol ?? 0.2, v => { n.tol = Math.max(0.005, v); }, 0.01));
       const T = plotTargets(n), segs = T.length - 3 * n.strokes.length;
       html += `<div class="note" style="margin-bottom:6px">Curve tol. = how far (mm) the straight segments may stray from the true curve. Smaller = smoother curves, more moves (now ${segs} segments, ${T.length} moves).</div>`;
-      html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes. Each stroke: a function called before every stroke (e.g. dip the brush), then a MoveJ to the stroke's approach point. Blend: on = curves are drawn in one smooth motion, but each stroke starts without a ramp and the arm may lose steps; off = every segment speeds up and slows down (reliable, slower on curves).</div>`;
+      html += `<div class="note" style="margin-bottom:6px">Anchor = drawing centre, relative to the base frame. The pen lifts by the approach height between strokes. Each stroke: a function called before every stroke (e.g. dip the brush), then a MoveJ to the stroke's approach point. ${K.blend ? ' Blend: on = curves are drawn in one smooth motion, but each stroke starts without a ramp and the arm may lose steps; off = every segment speeds up and slows down (reliable, slower on curves).' : ''}</div>`;
       html += btns([['Load SVG…', 'svgload'], ['Anchor at TCP', 'atcp']]);
       acts.svgload = () => pickFile('.svg,image/svg+xml', async f => { Object.assign(n, parseSvg(await f.text()), { file: f.name }); });
       acts.atcp = () => { [a.x, a.y, a.z] = round(toBase(fk(cur))); };
     }
     if (n.type === 'do') {
       binds.out = v => { n.out = v; }; binds.on = v => { n.on = v === '1'; };
-      html += field('Output', `<select data-k="out"><option value="gpio" ${n.out === 'gpio' ? 'selected' : ''}>GPIO (suction pump)</option><option value="fan" ${n.out === 'fan' ? 'selected' : ''}>Fan</option></select>`);
+      html += field('Output', `<select data-k="out"><option value="gpio" ${n.out === 'gpio' ? 'selected' : ''}>${K.out}</option>${K.fan || n.out === 'fan' ? `<option value="fan" ${n.out === 'fan' ? 'selected' : ''}>Fan</option>` : ''}</select>`);
+      if (unsupported(n)) html += `<div class="warn">The ${K.name} has no fan output.</div>`;
       html += field('State', `<select data-k="on"><option value="1" ${n.on ? 'selected' : ''}>ON</option><option value="0" ${n.on ? '' : 'selected'}>OFF</option></select>`);
-      html += `<div class="note" style="margin-bottom:6px">Switches one of the arm's digital outputs (GPIO = M22/M23, fan = M27/M28). Runs after the previous move has finished.</div>`;
+      html += `<div class="note" style="margin-bottom:6px">Switches one of the arm's outputs (${K.servo ? 'GPIO = M22/M23, fan = M27/M28' : 'the suction cup'}). Runs after the previous move has finished.</div>`;
     }
     if (n.type === 'pwm') {
       html += field('Duty', num('value', n.value, v => { n.value = Math.max(0, Math.min(255, Math.round(v))); }));
-      html += `<div class="note" style="margin-bottom:6px">PWM output duty cycle, 0–255 (128 = 50 %), e.g. laser power. Sent as M21.</div>`;
+      html += `<div class="note" style="margin-bottom:6px">${K.servo ? 'PWM output duty cycle, 0–255 (128 = 50 %), e.g. laser power. Sent as M21.' : 'Laser: on when the duty is above 0, off at 0 (the Magician switches it, no power level).'}</div>`;
     }
     if (n.type === 'gripper') {
       binds.action = v => { n.action = v; };
-      html += field('Action', `<select data-k="action">${[['set', 'Move to position'], ['zero', 'Calibrate (set zero)'], ['release', 'Release (servo off)']].map(([v, t]) => `<option value="${v}" ${n.action === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
+      html += field('Action', `<select data-k="action">${[['set', 'Move to position'], ...K.gripperCal ? [['zero', 'Calibrate (set zero)']] : [], ['release', K.servo ? 'Release (servo off)' : 'Release (pump off)']].map(([v, t]) => `<option value="${v}" ${n.action === v ? 'selected' : ''}>${t}</option>`).join('')}</select>`);
       if (n.action === 'set') {
         html += field('Open %', num('pos', n.pos, v => { n.pos = Math.max(0, Math.min(100, v)); }, 5));
-        html += field('Speed', num('gspeed', n.speed, v => { n.speed = Math.max(1, Math.min(1500, v)); }, 50));
+        if (K.servo) html += field('Speed', num('gspeed', n.speed, v => { n.speed = Math.max(1, Math.min(1500, v)); }, 50));
       }
-      html += `<div class="note" style="margin-bottom:6px">Gripper: 0 = closed, 100 = fully open, speed up to 1500 (M25). Add a Wait after it if the next move must wait for the gripper.</div>`;
+      html += `<div class="note" style="margin-bottom:6px">${K.servo ? 'Gripper: 0 = closed, 100 = fully open, speed up to 1500 (M25).' : 'Pneumatic gripper: below 50 % it closes, otherwise it opens.'} Add a Wait after it if the next move must wait for the gripper.</div>`;
     }
+    if (unsupported(n) && n.type !== 'do') html += `<div class="warn">Not available on the ${K.name}: skipped.</div>`;
     if (n.type === 'wait') html += field('Time ms', num('ms', n.ms, v => { n.ms = Math.max(0, v); }, 100));
     if (n.type === 'loop') html += field('Count', num('count', n.count, v => { n.count = Math.max(1, v | 0); }));
     if (!html.includes('data-act="line"')) html += btns([['Run line', 'line']]);
@@ -412,7 +419,7 @@ async function waitQueue() {
     if (abort) throw STOP;
     const q = await robot.queueSize().catch(() => null);
     if (q === null || isNaN(q)) return robot.waitIdle(() => abort, 120000);
-    if (q < 40) return;
+    if (q < robot.queue.below) return;
     await sleep(200);
   }
 }
@@ -435,14 +442,16 @@ async function exec(n) {
     case 'func': break; // a definition: only runs when called
     case 'call': await callFn(funcById(n.fn), 'call'); break;
     case 'wait': await waitAbortable(n.ms); break;
-    case 'poweron': if (on) { await robot.powerOn(); await sleep(300); } break;
+    case 'poweron': case 'release': if (unsupported(n)) { log(`${nodeLabel(n)}: not on the ${K.name}, skipped`); break; }
+      if (n.type === 'release') { if (on) { await robot.release(); await sleep(300); } break; }
+      if (on) { await robot.powerOn(); await sleep(300); } break;
     case 'pwm': if (on) { await robot.setPWM(n.value); await sleep(100); } else log(`(sim) ${nodeLabel(n)}`); break;
     case 'gripper':
       if (on) { await (n.action === 'zero' ? robot.gripperZero() : n.action === 'release' ? robot.gripperRelease() : robot.gripper(n.pos, n.speed)); await sleep(100); }
       else log(`(sim) ${nodeLabel(n)}`);
       break;
-    case 'do': if (on) { await robot.setDO(n.out, n.on); await sleep(100); } else log(`(sim) ${nodeLabel(n)}`); break;
-    case 'release': if (on) { await robot.release(); await sleep(300); } break;
+    case 'do': if (unsupported(n)) { log(`${nodeLabel(n)}: not on the ${K.name}, skipped`); break; }
+      if (on) { await robot.setDO(n.out, n.on); await sleep(100); } else log(`(sim) ${nodeLabel(n)}`); break;
     case 'home':
       if (on) { log('homing…'); await abortable(robot.home()); setCur(await syncFromRobot().catch(() => [0, 0, 0])); }
       else await animJ([0, 0, 0], 60);
@@ -488,7 +497,7 @@ async function exec(n) {
           if (on) {
             if (!J) await sendL(from, t.p, n.speed); else await robot.movej(t.j, n.speed);
             await sleep(20); // pymycobot's pace: don't overrun the board's serial buffer
-            if (++sent % 20 === 0) await waitQueue();
+            if (++sent % robot.queue.every === 0) await waitQueue();
           }
           J ? await animJ(t.j, n.speed) : await animL(t.p, n.speed, 1);
           if (on && (jump(t, i) || t.end)) await robot.waitIdle(() => abort, 120000); // Stop takes effect at the end of a stroke
@@ -612,7 +621,26 @@ $('loadList').addEventListener('click', e => {
 $('loadFilter').addEventListener('input', renderLoad);
 $('loadClose').onclick = () => $('loadDlg').close();
 
-function setProgram(p) { delete p.log; prog = p; sel = null; $('loopProg').checked = false; updateBase(); refresh(); }
+function setProgram(p) { delete p.log; p.robot ||= 'ultraarm'; prog = p; sel = null; $('loopProg').checked = false; applyRobot(); refresh(); }
+
+// switch the sim, the limits, the editor and the driver to the program's robot (closes a connection to another arm)
+function applyRobot() {
+  const key = prog.robot in ROBOTS ? prog.robot : 'ultraarm';
+  setRobot(key);
+  buildArm();
+  if (!(robot instanceof DRIVERS[key])) {
+    if (robot.port) { robot.disconnect(); real = null; log(`closed the connection: this program is for the ${K.name}`, true); }
+    const r = new DRIVERS[key]();
+    Object.assign(r, { onLog: robot.onLog, onLimit: robot.onLimit, enabled: robot.enabled });
+    robot = r;
+  }
+  $('robotSel').value = key;
+  $('btnPower').hidden = $('btnRelease').hidden = !K.servo;
+  document.querySelectorAll('[data-add="poweron"],[data-add="release"]').forEach(b => { b.hidden = !K.servo; });
+  $('tools').querySelector('[data-add="pwm"]').textContent = '+ ' + K.pwm;
+  updateBase();
+  setCur(ik(fk(cur)) ? cur : [0, 0, 0]);
+}
 
 // ---------------- serial UI ----------------
 async function refreshPorts() {
@@ -637,6 +665,7 @@ async function addPort() {
 
 async function toggleConnection() {
   if (robot.port) { await robot.disconnect(); log('closed'); real = null; return; }
+  log(`connecting to a ${K.name}`);
   const port = $('port').value === '' ? await addPort() : (await navigator.serial.getPorts())[+$('port').value];
   log('opening…');
   await robot.connect(port, +$('baud').value);
@@ -651,6 +680,7 @@ function renderButtons() {
   for (const b of ['btnRun', 'btnStep', 'btnHome', 'btnSave', 'btnLoad', 'btnNew']) $(b).disabled = running;
   $('btnPower').disabled = $('btnRelease').disabled = running || !live();
   $('btnStop').disabled = !running;
+  $('robotSel').disabled = running || !!robot.port;
   gizmo.enabled = !running; // no dragging/streaming while a program drives the arm
   document.querySelectorAll('.tools button').forEach(b => { b.disabled = running; });
 }
@@ -688,6 +718,12 @@ $('progName').addEventListener('change', e => { prog.name = e.target.value; });
 $('progAuthor').addEventListener('change', e => { prog.author = e.target.value; });
 
 $('btnConn').onclick = guard(toggleConnection);
+$('robotSel').innerHTML = Object.entries(ROBOTS).map(([k, r]) => `<option value="${k}">${r.name}</option>`).join('');
+$('robotSel').onchange = e => {
+  if (robot.port) { e.target.value = prog.robot; return log('close the connection before switching robot', true); }
+  prog.robot = e.target.value; applyRobot(); refresh();
+  log(`robot: ${K.name}` + (prog.waypoints.some(w => w.bad) ? ' – some waypoints are out of its reach (red)' : ''), prog.waypoints.some(w => w.bad));
+};
 $('live').onchange = e => { robot.enabled = e.target.checked; log(robot.enabled ? 'sending to robot ON' : 'sending to robot OFF – sim only'); renderButtons(); };
 $('btnAddPort').onclick = guard(addPort);
 $('btnPower').onclick = () => run({ type: 'poweron' });

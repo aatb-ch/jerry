@@ -12,6 +12,7 @@ export class Robot {
   onLog = () => {};
   onLimit = () => {}; // the arm refused a move ("limit reached"): (reply line, last motion commands sent)
   sent = [];
+  queue = { every: 20, below: 40 }; // SVG plot: check the queue every 20 moves, wait while 40+ are queued
 
   ready = false; // true once the board has booted: nothing is sent before that
   get open() { return this.ready; }

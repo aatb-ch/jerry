@@ -1,7 +1,7 @@
 // Program geometry shared by the editor and the results slideshow: SVG plot targets and the TCP path of a program.
 // Waypoints need robotPos / joints / bad (the editor keeps them up to date; prepare() computes them for a loaded file).
 import * as THREE from 'three';
-import { fk, ik, setTool } from './kin.js';
+import { fk, ik, setTool, setRobot } from './kin.js';
 import { simplify } from './svg.js';
 
 const R = Math.PI / 180;
@@ -16,6 +16,7 @@ export const baseMatrix = b => new THREE.Matrix4().compose(new THREE.Vector3(b.x
 
 // a saved program as loaded from the db: set its tool, derive waypoint robot positions / joints; returns the base matrix
 export function prepare(prog) {
+  setRobot(prog.robot);
   const t = prog.tool || { x: 0, y: 0, z: 0 };
   setTool([t.x, t.y, t.z]);
   const M = baseMatrix(prog.base);

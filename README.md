@@ -1,9 +1,10 @@
 # Jerry
 
-Jerry, a simple online/offline programming environment for the [Elephant Robotics](http://elephantrobotics.com/) ultraArm P340, used during a workshop at [Hong Kong Design Institute](https://hkdi.edu.hk/). This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware, loading their own files easily from a shared library.
+Jerry, a simple online/offline programming environment for the [Elephant Robotics](http://elephantrobotics.com/) ultraArm P340 and the [Dobot](https://www.dobot-robots.com/) Magician, used during a workshop at [Hong Kong Design Institute](https://hkdi.edu.hk/). This tool was developed to allow a whole class to experiment individually virtually on their projects, and connect periodically to real hardware, loading their own files easily from a shared library.
 
 ## Features
 
+- Two robots: ultraArm P340 and Dobot Magician. Pick one per program; the program itself stays the same, only the reach and the available outputs change
 - Joint and Cartesian jogging, by buttons or by dragging the TCP gizmo
 - TCP and base coordinate systems; tool offset from the flange (default: TCP at the flange)
 - Waypoints: capture from the TCP, edit numerically or drag in 3D
@@ -31,13 +32,15 @@ A program runs its nodes from top to bottom. Each node waits for the previous on
 | **Loop** | Runs the nodes inside it a set number of times. |
 | **Function** | Defines a named subprogram. Its nodes are skipped where they stand and only run when called. |
 | **Call** | Runs a function at this point. Define a procedure once and call it as often as needed. |
-| **Power on** | Locks the servos so the arm holds its position. |
+| **Power on** | Locks the servos so the arm holds its position (ultraArm only). |
 | **Home** | Sends the arm to its home position (all joints at 0). |
-| **Release** | Releases the servos: the arm can be moved by hand. |
+| **Release** | Releases the servos: the arm can be moved by hand (ultraArm only; on the Magician use the unlock button on the forearm). |
 | **SVG plot** | Draws an SVG: for each stroke, moves above its start, lowers by the approach height, follows the stroke, then lifts. Optionally calls a function before every stroke (e.g. dip a brush in ink). |
-| **Set DO** | Switches a digital output on or off: GPIO (suction pump) or fan. |
-| **PWM** | Sets the PWM output, 0–255 (e.g. laser power). |
-| **Gripper** | Moves the gripper to a position (0 = closed, 100 = open), calibrates it, or releases it. |
+| **Set DO** | Switches a digital output on or off: GPIO (suction pump) or fan on the ultraArm, the suction cup on the Magician. |
+| **PWM** | Sets the PWM output, 0–255 (e.g. laser power). On the Magician it is **Laser**: on above 0, off at 0. |
+| **Gripper** | Moves the gripper to a position (0 = closed, 100 = open), calibrates it, or releases it. The Magician's pneumatic gripper only opens or closes. |
+
+Nodes a robot can't do are shown in red and skipped.
 
 Add nodes with the blue buttons; they go after the selected node, or inside it if it is a loop or function. **→ in** / **← out** move a node into the loop or function above, or back out.
 
@@ -48,7 +51,9 @@ Deploy on a LAMP server with HTTPS to have a simple personal virtual programming
 - **Production:** copy the folder to a LAMP server (PHP 7.4+) with HTTPS. `db/` must be writable by Apache.
 - **Local:** serve the folder with any local PHP stack such as [MAMP](https://www.mamp.info), with HTTPS enabled (Web Serial needs HTTPS or localhost). `db/` must be writable.
 
-The robot connects over Web Serial, which needs Chrome or Edge on HTTPS or localhost. Click **+ Port**, pick the arm's USB serial port, then **Open** (115200 baud).
+The robot connects over Web Serial, which needs Chrome or Edge on HTTPS or localhost. Pick the robot, click **+ Port**, pick the arm's USB serial port, then **Open** (115200 baud).
+
+The Magician support follows Dobot's published [communication protocol](https://download.dobot.cc/product-manual/dobot-magician/pdf/en/Dobot-Communication-Protocol-V1.1.5.pdf) and the arm's published dimensions; it has not been checked on a real arm yet.
 
 ## Files
 
@@ -57,8 +62,9 @@ The robot connects over Web Serial, which needs Chrome or Edge on HTTPS or local
 | `index.html` | UI layout and styles |
 | `js/main.js` | program tree, properties, jogging, executor, save/load |
 | `js/scene.js` | three.js scene, arm model, waypoints, gizmo, path preview |
-| `js/kin.js` | forward/inverse kinematics and arm dimensions |
+| `js/kin.js` | forward/inverse kinematics and the dimensions of each robot |
 | `js/serial.js` | Web Serial + ultraArm G-code protocol |
+| `js/dobot.js` | Web Serial + Dobot Magician binary protocol |
 | `js/svg.js` | SVG → simplified pen strokes in mm |
 | `api.php` | storage: `db/<guid>/<version>.json` |
 

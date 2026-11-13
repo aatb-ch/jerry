@@ -1,26 +1,47 @@
-// ultraArm P340 kinematics (approximate geometry, mm / deg). Robot frame: Z up, X forward.
-// Parallel-linkage arm: J2 = upper arm tilt from vertical, J3 = forearm tilt below horizontal, tool stays level.
+// Kinematics of the supported arms (mm / deg). Robot frame: Z up, X forward.
+// Both are parallel-linkage arms: J2 = upper arm tilt from vertical, J3 = forearm tilt below horizontal, tool stays level.
 // TCP: r = A0 + L1*sin(j2) + L2*cos(j3) + E ;  z = SH + L1*cos(j2) - L2*sin(j3) - D
-// Tuned so max reach = 365.55 and z range ≈ [-140, 130] like the official coord limits.
-export const K = {
-  L1: 140, L2: 140,   // upper arm, forearm
-  A0: 20,             // shoulder offset from J1 axis
-  E: 65.55, D: 70,    // tool bracket: forward, down
-  SH: 60,             // shoulder height above robot origin
-  TABLE: -150,        // table z (visual only)
-  // joint limits from the P340 manual: J1 -150..170, J2 -20..90, J3 -5..75 (pymycobot's docstring says J3 110).
-  // J1 is mirrored at the wire (serial.js), so in the sim's frame it is -170..150.
-  lim: [[-170, 150], [-20, 90], [-5, 75]],
-  // elbow fold: the max J3 depends on J2 (measured on the arm: J3 stops at 51° with J2 = 0), so J3 − J2 ≤ 51
-  fold: 51,
-  // Cartesian limits the firmware checks (pymycobot set_coords): x, y, z in mm, robot frame
-  box: [[-360, 365.55], [-365.55, 365.55], [-140, 130]],
+export const ROBOTS = {
+  ultraarm: {
+    name: 'ultraArm P340',
+    // tuned so max reach = 365.55 and z range ≈ [-140, 130] like the official coord limits
+    L1: 140, L2: 140,   // upper arm, forearm
+    A0: 20,             // shoulder offset from J1 axis
+    E: 65.55, D: 70,    // tool bracket: forward, down
+    SH: 60,             // shoulder height above robot origin
+    TABLE: -150,        // table z (visual only)
+    // joint limits from the P340 manual: J1 -150..170, J2 -20..90, J3 -5..75 (pymycobot's docstring says J3 110).
+    // J1 is mirrored at the wire (serial.js), so in the sim's frame it is -170..150.
+    lim: [[-170, 150], [-20, 90], [-5, 75]],
+    // elbow fold: the max J3 depends on J2 (measured on the arm: J3 stops at 51° with J2 = 0), so J3 − J2 ≤ 51
+    fold: 51,
+    // Cartesian limits the firmware checks (pymycobot set_coords): x, y, z in mm, robot frame
+    box: [[-360, 365.55], [-365.55, 365.55], [-140, 130]],
+    // what the hardware offers (the editor hides the rest)
+    servo: true, fan: true, blend: true, gripperCal: true, out: 'GPIO (suction pump)', pwm: 'PWM',
+  },
+  magician: {
+    name: 'Dobot Magician',
+    // published dimensions: rear arm 135, forearm 147; origin at the shoulder (J2 axis). The flange is the end
+    // effector mount 59.7 mm in front of the forearm tip (set as the arm's end effector offset on connect).
+    // Not yet checked on the arm.
+    L1: 135, L2: 147, A0: 0, E: 59.7, D: 0, SH: 0,
+    TABLE: -138,
+    // joint limits from the Magician user guide: base ±90, rear arm 0..85, forearm −10..90
+    lim: [[-90, 90], [0, 85], [-10, 90]],
+    fold: Infinity, // the firmware checks the elbow itself
+    box: [[-400, 400], [-400, 400], [-400, 400]],
+    servo: false, fan: false, blend: false, gripperCal: false, out: 'Suction cup', pwm: 'Laser',
+  },
 };
+// the current robot: K is mutated in place, so every module that imported it sees the switch
+export const K = { ...ROBOTS.ultraarm };
+export const setRobot = key => Object.assign(K, ROBOTS[key] || ROBOTS.ultraarm);
 
 const R = Math.PI / 180;
 
 const within = (v, l) => v.every((x, i) => x >= l[i][0] - 1e-6 && x <= l[i][1] + 1e-6);
-export const inLimits = j => within(j, K.lim) && j[2] - j[1] <= K.fold + 1e-6 && within(flange(j), K.box);
+export const inLimits = j => within(j, K.lim) && !(j[2] - j[1] > K.fold + 1e-6) && within(flange(j), K.box);
 
 // Tool: TCP offset from the flange, in the flange frame (x forward, y left, z up; it turns with J1, stays level).
 // [0, 0, 0] = TCP at the flange. The arm itself only knows flange coordinates (what M114 / G0 use).

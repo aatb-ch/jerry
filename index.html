@@ -12,6 +12,7 @@
   "./js/kin.js": "./js/kin.js?v=__V__",
   "./js/scene.js": "./js/scene.js?v=__V__",
   "./js/serial.js": "./js/serial.js?v=__V__",
+  "./js/dobot.js": "./js/dobot.js?v=__V__",
   "./js/svg.js": "./js/svg.js?v=__V__",
   "./js/path.js": "./js/path.js?v=__V__"
 } }
@@ -98,6 +99,9 @@
     <h3><span class="dot" id="dot"></span> Connection <span class="sp"></span>
       <label class="chk" title="Global gate: when off, nothing is sent to the arm (programs and jogging run on the virtual robot only)"><input type="checkbox" id="live" checked> send to robot</label>
     </h3>
+    <div class="row">
+      <select id="robotSel" title="The arm this program is for: sets the simulation, the reach and the protocol"></select>
+    </div>
     <div class="row">
       <select id="port"></select>
       <button id="btnAddPort" style="flex:0 0 auto" title="Pick a USB serial port (browser dialog)">+ Port</button>

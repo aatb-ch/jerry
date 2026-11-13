@@ -91,10 +91,16 @@ function makeArm(ghost) {
   return root;
 }
 
-export const arm = makeArm(false);
-export const ghost = makeArm(true);
-ghost.visible = false;
-scene.add(arm, ghost);
+// (re)built for the current robot (K) when the robot changes
+export let arm, ghost;
+export function buildArm() {
+  if (arm) scene.remove(arm, ghost);
+  arm = makeArm(false); ghost = makeArm(true);
+  ghost.visible = false;
+  scene.add(arm, ghost);
+  grid.position.z = K.TABLE;
+}
+buildArm();
 
 // ---------- base frame ----------
 export const baseFrame = new THREE.Group();
