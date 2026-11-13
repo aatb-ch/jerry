@@ -27,34 +27,38 @@ if (isset($_GET['list'])) { header('Content-Type: application/json'); exit(json_
 <script>
 let imgs = <?= json_encode($imgs) ?>;
 const layers = [...document.querySelectorAll('.layer')], empty = document.getElementById('empty');
-const rand = (a, b) => a + Math.random() * (b - a);
+const ALONE = 5000, TOGETHER = 5000, FADE = 1000; // ms (FADE = the CSS opacity transition)
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 
-// pick an image no layer is showing (this one included, so it really changes), if there are enough images
-function pick() {
-  const shown = layers.map(l => l.dataset.src);
-  const free = imgs.filter(i => !shown.includes(i));
-  const pool = free.length ? free : imgs;
-  return pool[Math.floor(Math.random() * pool.length)];
+// shuffled deck: every image once per round, no image twice in a row across rounds
+let deck = [], prev = null;
+function next() {
+  if (!deck.length) {
+    deck = imgs.filter(i => i !== prev).sort(() => Math.random() - 0.5);
+    if (!deck.length) deck = [...imgs];
+  }
+  return prev = deck.pop();
 }
+const load = src => new Promise(r => { const i = new Image(); i.onload = i.onerror = () => r(i); i.src = 'img/' + encodeURIComponent(src); });
 
-// each layer swaps its image on its own random clock, every 3–10 s (preloaded, faded out, swapped, faded in)
-function swap(layer) {
-  const src = imgs.length && pick();
-  empty.hidden = imgs.length > 0;
-  if (!src) return setTimeout(() => swap(layer), 3000);
-  layer.dataset.src = src; // claimed now, so another layer doesn't pick it during the fade
-  const next = new Image();
-  next.onload = next.onerror = () => {
-    layer.classList.add('out');
-    setTimeout(() => {
-      layer.src = next.src;
-      layer.classList.toggle('out', !next.width);
-      setTimeout(() => swap(layer), rand(2000, 9000)); // + 1 s fade = a new image every 3–10 s
-    }, 1000);
-  };
-  next.src = 'img/' + encodeURIComponent(src);
+// sequence: A alone → A + B overlapping → B alone → B + C → C alone → …
+// two layers take turns: the hidden one fades in with the next image, then the old one fades out
+async function play() {
+  let [cur, nxt] = layers;
+  for (;;) {
+    empty.hidden = imgs.length > 0;
+    if (!imgs.length) { await sleep(3000); continue; }
+    const img = await load(next()); // preloaded, so the fade starts with the image ready
+    nxt.src = img.src;
+    nxt.classList.remove('out');
+    const overlap = cur.hasAttribute('src') && !cur.classList.contains('out');
+    await sleep(FADE + (overlap ? TOGETHER : 0));
+    cur.classList.add('out');
+    await sleep(FADE + ALONE);
+    [cur, nxt] = [nxt, cur];
+  }
 }
-layers.forEach((l, i) => setTimeout(() => swap(l), i * 700));
+play();
 
 // new images dropped on the server show up within a minute
 setInterval(() => fetch('?list').then(r => r.json()).then(l => { imgs = l; }).catch(() => {}), 60000);

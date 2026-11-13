@@ -61,7 +61,7 @@ The robot connects over Web Serial, which needs Chrome or Edge on HTTPS or local
 | `js/serial.js` | Web Serial + ultraArm G-code protocol |
 | `js/svg.js` | SVG → simplified pen strokes in mm |
 | `api.php` | storage: `db/<guid>/<version>.json` |
-| `results/` | workshop results slideshow: images dropped in `results/img/` are shown two at a time, multiplied on top of each other |
+| `results/` | workshop results slideshow: images dropped in `results/img/` play in sequence: one alone, then overlapping (multiplied) with the next, then the next alone, … |
 
 ## License
 
