@@ -55,6 +55,8 @@ The robot connects over Web Serial, which needs Chrome or Edge on HTTPS or local
 
 The Magician support follows Dobot's published [communication protocol](https://download.dobot.cc/product-manual/dobot-magician/pdf/en/Dobot-Communication-Protocol-V1.1.5.pdf) and the arm's published dimensions; it has not been checked on a real arm yet.
 
+On Windows, the Magician's serial port only shows up once the [Silicon Labs CP210x driver](https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers) is installed. macOS sees it without one.
+
 ## Files
 
 | | |
